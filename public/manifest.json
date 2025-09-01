@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Simple HUD Extension",
+  "version": "1.0",
+  "description": "A simple HUD overlay for testing",
+  "permissions": [
+    "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["hud.css"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
