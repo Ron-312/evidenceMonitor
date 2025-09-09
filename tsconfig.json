@@ -8,7 +8,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "./src",
+    "outDir": "./public",
     "rootDir": "./src",
     "declaration": false,
     "removeComments": true
