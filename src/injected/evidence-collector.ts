@@ -4,6 +4,7 @@
 import { ElementRegistry } from './element-registry';
 import { StackTrace } from './utils/stack-trace';
 import { generateEvidenceType } from '../evidence-config';
+import { recordingModeHandler } from './recording-modes';
 
 // TODO: Move to shared interfaces file
 interface EvidenceEvent {
@@ -52,6 +53,9 @@ export class EvidenceCollector {
 
       // Record this evidence in deduplication map
       this.recordForDeduplication(evidence);
+
+      // Console log if in console mode (after we've decided to collect evidence)
+      recordingModeHandler.logEvidence(element, action, hookType, evidence.stackTrace);
 
       // Send evidence (queue if content script not ready)
       this.sendEvidence(evidence);

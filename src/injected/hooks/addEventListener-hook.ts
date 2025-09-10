@@ -3,6 +3,7 @@
 
 import { EvidenceCollector } from '../evidence-collector';
 import { shouldHookEventListener } from '../../evidence-config';
+import { recordingModeHandler } from '../recording-modes';
 
 /**
  * Hook for EventTarget.addEventListener surveillance detection
@@ -39,6 +40,12 @@ export class AddEventListenerHook {
         listener: EventListenerOrEventListenerObject | null,
         options?: boolean | AddEventListenerOptions
       ) {
+        // Breakpoint if recording is active AND in breakpoint mode (while malicious script is on call stack)
+        if (recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint' && self.shouldMonitorTarget(this, type)) {
+          console.log(`🛑 Breakpoint: addEventListener('${type}') on`, this);
+          debugger; // eslint-disable-line no-debugger
+        }
+
         // Monitor this addEventListener call for surveillance
         self.monitorAddEventListenerCall(this, type, listener, options);
 

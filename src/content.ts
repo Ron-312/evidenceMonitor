@@ -2,6 +2,7 @@ interface HudState {
   recording: boolean;
   eventCount: number;
   atCap: boolean;
+  recordingMode: 'console' | 'breakpoint';
 }
 
 class HUD {
@@ -9,7 +10,8 @@ class HUD {
   private state: HudState = {
     recording: false,
     eventCount: 0,
-    atCap: false
+    atCap: false,
+    recordingMode: 'console'
   };
 
   constructor() {
@@ -23,8 +25,10 @@ class HUD {
     const hud = document.createElement('div');
     hud.id = 'evidence-hud-overlay';
     hud.innerHTML = `
-      <div class="hud-content">
+      <div class="hud-header">
         <h3>Input Evidence</h3>
+      </div>
+      <div class="hud-content">
         
         <!-- Status Display -->
         <div class="status-section">
@@ -43,10 +47,20 @@ class HUD {
         <!-- Message Display -->
         <div class="message-display" style="display: none;"></div>
         
-        <!-- TODO: Recording Mode Options
-             - Radio buttons: Log to Console vs Breakpoint
-             - When Breakpoint mode: show debugger; statement on evidence capture
-             - When Console mode: console.log() evidence events -->
+        <!-- Recording Mode Options -->
+        <div class="recording-mode-section">
+          <h4>Recording Mode</h4>
+          <div class="radio-group">
+            <label class="radio-option">
+              <input type="radio" name="recordingMode" value="console" checked>
+              <span>Log to Console</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="recordingMode" value="breakpoint">
+              <span>Breakpoint (debugger)</span>
+            </label>
+          </div>
+        </div>
         
         <!-- TODO: Filter Options Section  
              - Element Selector input: CSS selector to limit monitoring (e.g., "#myInput, .password")
@@ -73,6 +87,7 @@ class HUD {
   private attachHUD(): void {
     document.body.appendChild(this.hudElement);
     this.setupEventHandlers();
+    this.makeDraggable();
   }
 
   private setupEventHandlers(): void {
@@ -80,11 +95,17 @@ class HUD {
     const stopBtn = this.hudElement.querySelector('.stop-recording') as HTMLButtonElement;
     const exportBtn = this.hudElement.querySelector('.export-data') as HTMLButtonElement;
     const clearBtn = this.hudElement.querySelector('.clear-data') as HTMLButtonElement;
+    const recordingModeRadios = this.hudElement.querySelectorAll('input[name="recordingMode"]') as NodeListOf<HTMLInputElement>;
 
     startBtn?.addEventListener('click', () => this.toggleRecording());
     stopBtn?.addEventListener('click', () => this.toggleRecording());
     exportBtn?.addEventListener('click', () => this.exportData());
     clearBtn?.addEventListener('click', () => this.clearData());
+
+    // Recording mode radio button handlers
+    recordingModeRadios.forEach(radio => {
+      radio.addEventListener('change', () => this.onRecordingModeChange());
+    });
   }
 
   private setupMessageListener(): void {
@@ -100,6 +121,20 @@ class HUD {
         case 'HUD_MESSAGE':
           this.showMessage(message.message, message.level || 'info');
           break;
+        case 'SET_RECORDING_MODE':
+          // Forward recording mode to injected script
+          window.postMessage({ 
+            type: 'SET_RECORDING_MODE', 
+            recordingMode: message.recordingMode 
+          }, '*');
+          break;
+        case 'SET_RECORDING_STATE':
+          // Forward recording state to injected script
+          window.postMessage({ 
+            type: 'SET_RECORDING_STATE', 
+            recording: message.recording 
+          }, '*');
+          break;
       }
     });
   }
@@ -110,7 +145,8 @@ class HUD {
         this.updateState({
           recording: response.recording,
           eventCount: response.eventCount,
-          atCap: response.atCap
+          atCap: response.atCap,
+          recordingMode: response.recordingMode || 'console'
         });
       }
     });
@@ -133,6 +169,20 @@ class HUD {
 
   private clearData(): void {
     chrome.runtime.sendMessage({ type: 'CLEAR_EVENTS' });
+  }
+
+  private onRecordingModeChange(): void {
+    const selectedRadio = this.hudElement.querySelector('input[name="recordingMode"]:checked') as HTMLInputElement;
+    if (selectedRadio) {
+      const mode = selectedRadio.value as 'console' | 'breakpoint';
+      this.updateState({ recordingMode: mode });
+      
+      // Send mode change to background script
+      chrome.runtime.sendMessage({ 
+        type: 'SET_RECORDING_MODE', 
+        recordingMode: mode 
+      });
+    }
   }
 
   private updateState(newState: Partial<HudState>): void {
@@ -165,6 +215,12 @@ class HUD {
     stopBtn.disabled = !this.state.recording;
     exportBtn.disabled = this.state.eventCount === 0;
     clearBtn.disabled = this.state.eventCount === 0;
+
+    // Update recording mode radio buttons
+    const recordingModeRadio = this.hudElement.querySelector(`input[name="recordingMode"][value="${this.state.recordingMode}"]`) as HTMLInputElement;
+    if (recordingModeRadio) {
+      recordingModeRadio.checked = true;
+    }
   }
 
   private showMessage(message: string, level: string = 'info'): void {
@@ -179,6 +235,53 @@ class HUD {
     setTimeout(() => {
       messageDiv.style.display = 'none';
     }, 3000);
+  }
+
+  private makeDraggable(): void {
+    const header = this.hudElement.querySelector('.hud-header') as HTMLElement;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    header.addEventListener('mousedown', (e: MouseEvent) => {
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      
+      const rect = this.hudElement.getBoundingClientRect();
+      startLeft = rect.left;
+      startTop = rect.top;
+      
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e: MouseEvent) => {
+      if (!isDragging) return;
+      
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+      
+      let newLeft = startLeft + deltaX;
+      let newTop = startTop + deltaY;
+      
+      // Keep HUD within viewport bounds
+      const hudRect = this.hudElement.getBoundingClientRect();
+      const maxLeft = window.innerWidth - hudRect.width;
+      const maxTop = window.innerHeight - hudRect.height;
+      
+      newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+      newTop = Math.max(0, Math.min(newTop, maxTop));
+      
+      this.hudElement.style.left = newLeft + 'px';
+      this.hudElement.style.top = newTop + 'px';
+      this.hudElement.style.right = 'auto'; // Remove right positioning
+    });
+
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
   }
 }
 

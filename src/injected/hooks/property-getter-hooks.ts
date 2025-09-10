@@ -3,6 +3,7 @@
 
 import { EvidenceCollector } from '../evidence-collector';
 import { shouldHookPropertyGetter, EVIDENCE_CONFIG } from '../../evidence-config';
+import { recordingModeHandler } from '../recording-modes';
 
 /**
  * Stored original property descriptors for restoration
@@ -169,6 +170,12 @@ export class PropertyGetterHooks {
       // Install monitored property getter
       Object.defineProperty(target, propertyName, {
         get: function() {
+          // Breakpoint if recording is active AND in breakpoint mode (while malicious script is on call stack)
+          if (recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint') {
+            console.log(`🛑 Breakpoint: Property access ${propertyName} on`, this);
+            debugger; // eslint-disable-line no-debugger
+          }
+
           // Monitor this property access for surveillance
           self.monitorPropertyAccess(this, propertyName);
 

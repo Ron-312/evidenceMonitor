@@ -16,22 +16,25 @@ interface EvidenceEvent {
 interface TabData {
   events: EvidenceEvent[];
   recording: boolean;
+  recordingMode: 'console' | 'breakpoint';
   domain: string;
   createdAt: number;
 }
 
 interface HudMessage {
-  type: 'HUD_MESSAGE' | 'HUD_UPDATE';
+  type: 'HUD_MESSAGE' | 'HUD_UPDATE' | 'SET_RECORDING_MODE' | 'SET_RECORDING_STATE';
   level?: 'info' | 'warning' | 'success' | 'error';
   message?: string;
   recording?: boolean;
   eventCount?: number;
   atCap?: boolean;
+  recordingMode?: 'console' | 'breakpoint';
 }
 
 interface BackgroundMessage {
-  type: 'EVIDENCE_EVENT' | 'TOGGLE_RECORDING' | 'GET_STATUS' | 'EXPORT_EVENTS' | 'CLEAR_EVENTS';
+  type: 'EVIDENCE_EVENT' | 'TOGGLE_RECORDING' | 'GET_STATUS' | 'EXPORT_EVENTS' | 'CLEAR_EVENTS' | 'SET_RECORDING_MODE';
   event?: EvidenceEvent;
+  recordingMode?: 'console' | 'breakpoint';
 }
 
 interface ExportData {
@@ -79,7 +82,8 @@ class EvidenceManager {
           sendResponse({
             recording: this.isRecording(tabId),
             eventCount: this.getEventCount(tabId),
-            atCap: this.isAtCap(tabId)
+            atCap: this.isAtCap(tabId),
+            recordingMode: this.getRecordingMode(tabId)
           });
           break;
           
@@ -91,6 +95,13 @@ class EvidenceManager {
         case 'CLEAR_EVENTS':
           this.clearEvents(tabId);
           sendResponse({ cleared: true });
+          break;
+          
+        case 'SET_RECORDING_MODE':
+          if (message.recordingMode) {
+            this.setRecordingMode(tabId, message.recordingMode);
+            sendResponse({ recordingMode: message.recordingMode });
+          }
           break;
       }
     });
@@ -114,6 +125,7 @@ class EvidenceManager {
       this.tabData.set(tabId, {
         events: [],
         recording: false, // Start disabled by default
+        recordingMode: 'console', // Default to console logging
         domain: domain,
         createdAt: Date.now()
       });
@@ -179,6 +191,11 @@ class EvidenceManager {
         level: 'info',
         message: 'Recording started - watching input interactions'
       });
+      // Send recording mode to injected script
+      this.sendToTab(tabId, {
+        type: 'SET_RECORDING_MODE',
+        recordingMode: tabInfo.recordingMode
+      });
     } else {
       this.sendToTab(tabId, {
         type: 'HUD_MESSAGE',
@@ -186,6 +203,12 @@ class EvidenceManager {
         message: 'Recording stopped'
       });
     }
+
+    // Always send recording state to injected script
+    this.sendToTab(tabId, {
+      type: 'SET_RECORDING_STATE',
+      recording: tabInfo.recording
+    });
   }
 
   private isRecording(tabId: number): boolean {
@@ -198,6 +221,26 @@ class EvidenceManager {
 
   private isAtCap(tabId: number): boolean {
     return this.getEventCount(tabId) >= this.EVENT_CAP;
+  }
+
+  private getRecordingMode(tabId: number): 'console' | 'breakpoint' {
+    return this.tabData.get(tabId)?.recordingMode || 'console';
+  }
+
+  private setRecordingMode(tabId: number, mode: 'console' | 'breakpoint'): void {
+    const tabInfo = this.tabData.get(tabId);
+    if (tabInfo) {
+      tabInfo.recordingMode = mode;
+      console.debug(`[Background] Recording mode set to ${mode} for tab ${tabId}`);
+      
+      // If currently recording, send mode update to injected script
+      if (tabInfo.recording) {
+        this.sendToTab(tabId, {
+          type: 'SET_RECORDING_MODE',
+          recordingMode: mode
+        });
+      }
+    }
   }
 
   private clearEvents(tabId: number): void {

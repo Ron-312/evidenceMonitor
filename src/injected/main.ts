@@ -2,6 +2,7 @@
 // Manages the lifecycle of the surveillance detection system
 
 import { HookManager } from './hook-manager';
+import { recordingModeHandler, RecordingMode } from './recording-modes';
 
 // ============================================================================
 // INITIALIZATION
@@ -23,6 +24,21 @@ if (!(window as any).__REFLECTIZ_INJECTED__) {
     
     // Mark as initialized and expose for debugging
     (window as any).__REFLECTIZ_INJECTED__ = hookManager;
+    
+    // Set up message listeners for recording mode and state
+    window.addEventListener('message', (event) => {
+      if (event.source !== window) return;
+      
+      if (event.data.type === 'SET_RECORDING_MODE') {
+        const mode = event.data.recordingMode as RecordingMode;
+        recordingModeHandler.setMode(mode);
+        console.debug(`[InjectedScript] Recording mode set to: ${mode}`);
+      } else if (event.data.type === 'SET_RECORDING_STATE') {
+        const recording = event.data.recording as boolean;
+        recordingModeHandler.setRecording(recording);
+        console.debug(`[InjectedScript] Recording state set to: ${recording}`);
+      }
+    });
     
     console.debug('[InjectedScript] Reflectiz surveillance detector running');
     

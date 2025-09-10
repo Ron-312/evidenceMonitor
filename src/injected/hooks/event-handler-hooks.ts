@@ -3,6 +3,7 @@
 
 import { EvidenceCollector } from '../evidence-collector';
 import { shouldHookEventHandlerSetter, EVIDENCE_CONFIG } from '../../evidence-config';
+import { recordingModeHandler } from '../recording-modes';
 
 /**
  * Stored original property descriptors for restoration
@@ -153,6 +154,12 @@ export class EventHandlerHooks {
 
       // Create hooked setter that detects surveillance
       const hookedSetter = function(this: any, handler: any) {
+        // Breakpoint if recording is active AND in breakpoint mode (while malicious script is on call stack)
+        if (recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint' && shouldHookEventHandlerSetter(this, propertyName)) {
+          console.log(`🛑 Breakpoint: Event handler setter ${propertyName} on`, this);
+          debugger; // eslint-disable-line no-debugger
+        }
+
         // Detect surveillance: Script is setting an event handler
         if (shouldHookEventHandlerSetter(this, propertyName)) {
           self.monitorEventHandlerAssignment(this, propertyName, handler);
@@ -204,6 +211,12 @@ export class EventHandlerHooks {
       });
 
       const hookedSetter = function(this: any, handler: any) {
+        // Breakpoint if recording is active AND in breakpoint mode (while malicious script is on call stack)
+        if (recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint' && shouldHookEventHandlerSetter(this, propertyName)) {
+          console.log(`🛑 Breakpoint: Event handler setter ${propertyName} (fallback) on`, this);
+          debugger; // eslint-disable-line no-debugger
+        }
+
         if (shouldHookEventHandlerSetter(this, propertyName)) {
           self.monitorEventHandlerAssignment(this, propertyName, handler);
         }
