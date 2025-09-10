@@ -193,7 +193,7 @@ class HUD {
 function injectSurveillanceScript(): void {
   try {
     const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('injected/main.js');
+    script.src = chrome.runtime.getURL('injected.js');
     script.onload = () => {
       console.debug('[ContentScript] Injected surveillance script loaded');
       script.remove(); // Clean up after injection
@@ -219,6 +219,12 @@ function setupInjectedScriptBridge(): void {
     
     // Handle evidence events from injected script
     if (event.data.type === 'EVIDENCE_EVENT') {
+      // Check if extension context is still valid
+      if (!chrome.runtime?.id) {
+        console.warn('[ContentScript] Extension context invalidated - cannot send evidence');
+        return;
+      }
+      
       // Forward evidence to background service worker
       chrome.runtime.sendMessage({
         type: 'EVIDENCE_EVENT',
@@ -253,8 +259,13 @@ function initialize(): void {
   // Set up communication bridge
   setupInjectedScriptBridge();
   
-  // Initialize HUD
-  new HUD();
+  // Only initialize HUD in the top frame (not in iframes)
+  if (window === window.top) {
+    new HUD();
+    console.debug('[ContentScript] HUD initialized in main frame');
+  } else {
+    console.debug('[ContentScript] Skipping HUD in iframe');
+  }
   
   console.debug('[ContentScript] Content script initialization complete');
 }

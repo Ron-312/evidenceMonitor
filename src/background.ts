@@ -243,16 +243,15 @@ class EvidenceManager {
       events: tabInfo.events
     };
 
-    // Trigger download
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+    // Trigger download using data URL (service workers don't support URL.createObjectURL)
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const url = 'data:application/json;charset=utf-8,' + encodeURIComponent(jsonString);
     
     chrome.downloads.download({
       url: url,
       filename: filename,
       saveAs: !isAutoExport // Don't prompt for auto-exports
     }, (_downloadId?: number) => {
-      URL.revokeObjectURL(url);
       
       if (!isAutoExport) {
         this.sendToTab(tabId, {

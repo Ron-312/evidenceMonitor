@@ -14,10 +14,11 @@
     "removeComments": true
   },
   "include": [
-    "src/*.ts"
+    "src/**/*.ts"
   ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "src/injected/**/*"
   ]
 }

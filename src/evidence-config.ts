@@ -9,13 +9,6 @@ export interface EvidenceHooks {
     eventHandlerSetters: string[];
     eventListeners: string[];
   };
-  
-  // Global hooks (window, document) 
-  globalElements: {
-    elements: string[];
-    eventHandlerSetters: string[];
-    eventListeners: string[];
-  };
 }
 
 // Evidence configuration matching Explorer exactly
@@ -46,27 +39,6 @@ export const EVIDENCE_CONFIG: EvidenceHooks = {
       'keyup',       // element.addEventListener('keyup', handler)
       'input',       // element.addEventListener('input', handler) 
       'change'       // element.addEventListener('change', handler)
-      // TODO: Add 'paste', 'focus', 'blur', 'submit' for expanded surveillance detection
-    ]
-  },
-
-  // Window and Document hooks (global keylogging detection)
-  globalElements: {
-    elements: ['window', 'document'],
-    
-    // Global event handler setters (when scripts monitor ALL typing)
-    eventHandlerSetters: [
-      'onkeydown',   // window.onkeydown = handler (catches all page typing)
-      'onkeypress',  // window.onkeypress = handler  
-      'onkeyup'      // window.onkeyup = handler
-    ],
-    
-    // Global addEventListener calls (keylogging surveillance)
-    eventListeners: [
-      'keydown',     // window.addEventListener('keydown', handler)
-      'keypress',    // window.addEventListener('keypress', handler) 
-      'keyup'        // window.addEventListener('keyup', handler)
-      // TODO: Add 'beforeunload', 'unload' for data exfiltration detection
     ]
   }
 };
@@ -79,9 +51,6 @@ export function isFormElement(element: Element): boolean {
   );
 }
 
-export function isGlobalElement(target: any): boolean {
-  return target === window || target === document;
-}
 
 export function shouldHookPropertyGetter(element: Element, propertyName: string): boolean {
   return isFormElement(element) && 
@@ -89,28 +58,18 @@ export function shouldHookPropertyGetter(element: Element, propertyName: string)
 }
 
 export function shouldHookEventHandlerSetter(target: any, propertyName: string): boolean {
-  // Form element event handler
+  // Form element event handler only
   if (target instanceof Element && isFormElement(target)) {
     return EVIDENCE_CONFIG.formElements.eventHandlerSetters.includes(propertyName);
-  }
-  
-  // Global element event handler  
-  if (isGlobalElement(target)) {
-    return EVIDENCE_CONFIG.globalElements.eventHandlerSetters.includes(propertyName);
   }
   
   return false;
 }
 
 export function shouldHookEventListener(target: any, eventType: string): boolean {
-  // Form element addEventListener
+  // Form element addEventListener only
   if (target instanceof Element && isFormElement(target)) {
     return EVIDENCE_CONFIG.formElements.eventListeners.includes(eventType);
-  }
-  
-  // Global addEventListener (keylogging detection)
-  if (isGlobalElement(target)) {
-    return EVIDENCE_CONFIG.globalElements.eventListeners.includes(eventType);
   }
   
   return false;
@@ -121,10 +80,6 @@ export function generateEvidenceType(target: any, action: string, hookType: 'pro
   
   if (target instanceof Element) {
     targetName = target.tagName.toLowerCase();
-  } else if (target === window) {
-    targetName = 'window';
-  } else if (target === document) {
-    targetName = 'document';
   } else {
     targetName = 'unknown';
   }

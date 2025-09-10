@@ -1,0 +1,15 @@
+{
+  "scripts": {
+    "build": "npm run build:ts && npm run build:injected",
+    "build:ts": "tsc",
+    "build:injected": "esbuild src/injected/main.ts --bundle --outfile=public/injected.js --platform=browser --target=es2020 --format=iife",
+    "tsc": "npm run build"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.4",
+    "esbuild": "^0.25.9"
+  },
+  "dependencies": {
+    "typescript": "^5.9.2"
+  }
+}

@@ -93,12 +93,17 @@ export class EvidenceCollector {
   }
 
   /**
-   * Gets element data for evidence - ID or outerHTML
+   * Gets element data for evidence - ID, name, then outerHTML
    */
   private getElementData(element: Element): string {
     try {
       if (element.id) {
         return element.id;
+      }
+      
+      const nameAttr = element.getAttribute('name');
+      if (nameAttr) {
+        return nameAttr;
       }
       
       if (element.outerHTML) {
