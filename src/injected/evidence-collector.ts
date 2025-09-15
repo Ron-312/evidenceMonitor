@@ -5,6 +5,7 @@ import { ElementRegistry } from './element-registry';
 import { StackTrace } from './utils/stack-trace';
 import { generateEvidenceType } from '../evidence-config';
 import { recordingModeHandler } from './recording-modes';
+import { filterManager } from './filter-manager';
 
 // TODO: Move to shared interfaces file
 interface EvidenceEvent {
@@ -36,34 +37,36 @@ export class EvidenceCollector {
   /**
    * Creates and sends evidence for surveillance action
    * Handles deduplication and queuing until content script ready
+   * Returns decision object for debugger breakpoint logic
    */
   createAndSendEvidence(
     element: Element, 
     action: string, 
     hookType: 'property' | 'eventHandler' | 'addEventListener'
-  ): void {
-    try {
-      // Create evidence object
-      const evidence = this.createEvidence(element, action, hookType);
-      
+  ): { shouldProceed: boolean; evidence: EvidenceEvent } {
+    // Create evidence object first to get stack trace (single capture)
+    const evidence = this.createEvidence(element, action, hookType);
+    
+    // Apply filters - check if this element and stack trace should be monitored
+    const shouldProceed = filterManager.shouldMonitor(element, evidence.stackTrace);
+    
+    if (shouldProceed) {
       // Check for deduplication
       if (this.isDuplicate(evidence)) {
-        return; // Skip duplicate evidence
+        return { shouldProceed: false, evidence };
       }
 
       // Record this evidence in deduplication map
       this.recordForDeduplication(evidence);
 
-      // Console log if in console mode (after we've decided to collect evidence)
+      // Console log if in console mode
       recordingModeHandler.logEvidence(element, action, hookType, evidence.stackTrace);
 
-      // Send evidence (queue if content script not ready)
+      // Send evidence
       this.sendEvidence(evidence);
-
-    } catch (error) {
-      console.error('[EvidenceCollector] Failed to create evidence:', error);
-      // Continue execution - don't break surveillance detection
     }
+
+    return { shouldProceed, evidence };
   }
 
   /**

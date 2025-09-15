@@ -13,28 +13,37 @@ interface EvidenceEvent {
   stackTrace: string[];
 }
 
+interface FilterOptions {
+  elementSelector: string;        // CSS selector (e.g., "#myInput, .password")
+  attributeFilters: string;       // name=value pairs (e.g., "name=password, type=email") 
+  stackKeywordFilter: string;     // case-insensitive keyword (e.g., "analytics")
+}
+
 interface TabData {
   events: EvidenceEvent[];
   recording: boolean;
   recordingMode: 'console' | 'breakpoint';
   domain: string;
   createdAt: number;
+  filters: FilterOptions;
 }
 
 interface HudMessage {
-  type: 'HUD_MESSAGE' | 'HUD_UPDATE' | 'SET_RECORDING_MODE' | 'SET_RECORDING_STATE';
+  type: 'HUD_MESSAGE' | 'HUD_UPDATE' | 'SET_RECORDING_MODE' | 'SET_RECORDING_STATE' | 'SET_FILTERS';
   level?: 'info' | 'warning' | 'success' | 'error';
   message?: string;
   recording?: boolean;
   eventCount?: number;
   atCap?: boolean;
   recordingMode?: 'console' | 'breakpoint';
+  filters?: FilterOptions;
 }
 
 interface BackgroundMessage {
-  type: 'EVIDENCE_EVENT' | 'TOGGLE_RECORDING' | 'GET_STATUS' | 'EXPORT_EVENTS' | 'CLEAR_EVENTS' | 'SET_RECORDING_MODE';
+  type: 'EVIDENCE_EVENT' | 'TOGGLE_RECORDING' | 'GET_STATUS' | 'EXPORT_EVENTS' | 'CLEAR_EVENTS' | 'SET_RECORDING_MODE' | 'SET_FILTERS';
   event?: EvidenceEvent;
   recordingMode?: 'console' | 'breakpoint';
+  filters?: FilterOptions;
 }
 
 interface ExportData {
@@ -83,7 +92,8 @@ class EvidenceManager {
             recording: this.isRecording(tabId),
             eventCount: this.getEventCount(tabId),
             atCap: this.isAtCap(tabId),
-            recordingMode: this.getRecordingMode(tabId)
+            recordingMode: this.getRecordingMode(tabId),
+            filters: this.getFilters(tabId)
           });
           break;
           
@@ -101,6 +111,13 @@ class EvidenceManager {
           if (message.recordingMode) {
             this.setRecordingMode(tabId, message.recordingMode);
             sendResponse({ recordingMode: message.recordingMode });
+          }
+          break;
+          
+        case 'SET_FILTERS':
+          if (message.filters && sender.tab?.url) {
+            this.setFilters(tabId, message.filters, sender.tab.url);
+            sendResponse({ filters: message.filters });
           }
           break;
       }
@@ -127,7 +144,12 @@ class EvidenceManager {
         recording: false, // Start disabled by default
         recordingMode: 'console', // Default to console logging
         domain: domain,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        filters: {
+          elementSelector: '',
+          attributeFilters: '',
+          stackKeywordFilter: ''
+        }
       });
     }
   }
@@ -243,10 +265,41 @@ class EvidenceManager {
     }
   }
 
+  private getFilters(tabId: number): FilterOptions {
+    return this.tabData.get(tabId)?.filters || {
+      elementSelector: '',
+      attributeFilters: '',
+      stackKeywordFilter: ''
+    };
+  }
+
+  private setFilters(tabId: number, filters: FilterOptions, url: string): void {
+    this.initializeTab(tabId, url);
+    const tabInfo = this.tabData.get(tabId);
+    if (tabInfo) {
+      tabInfo.filters = filters;
+      console.debug(`[Background] Filters updated for tab ${tabId}:`, filters);
+      
+      // Send filter updates to injected script
+      this.sendToTab(tabId, {
+        type: 'SET_FILTERS',
+        filters: filters
+      });
+    }
+  }
+
   private clearEvents(tabId: number): void {
     const tabInfo = this.tabData.get(tabId);
     if (tabInfo) {
       tabInfo.events = [];
+      
+      // Send HUD update to refresh button states and event count
+      this.sendToTab(tabId, {
+        type: 'HUD_UPDATE',
+        eventCount: 0,
+        atCap: false
+      });
+      
       this.sendToTab(tabId, {
         type: 'HUD_MESSAGE',
         level: 'info',

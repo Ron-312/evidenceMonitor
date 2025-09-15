@@ -154,15 +154,15 @@ export class EventHandlerHooks {
 
       // Create hooked setter that detects surveillance
       const hookedSetter = function(this: any, handler: any) {
-        // Breakpoint if recording is active AND in breakpoint mode (while malicious script is on call stack)
-        if (recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint' && shouldHookEventHandlerSetter(this, propertyName)) {
+        // Detect surveillance and get filter decision (let evidence collector decide based on filters)
+        const { shouldProceed } = (this instanceof Element) 
+          ? self.monitorEventHandlerAssignment(this, propertyName, handler)
+          : { shouldProceed: false };
+
+        // Breakpoint if recording is active AND in breakpoint mode AND filters pass
+        if (shouldProceed && recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint') {
           console.log(`🛑 Breakpoint: Event handler setter ${propertyName} on`, this);
           debugger; // eslint-disable-line no-debugger
-        }
-
-        // Detect surveillance: Script is setting an event handler
-        if (shouldHookEventHandlerSetter(this, propertyName)) {
-          self.monitorEventHandlerAssignment(this, propertyName, handler);
         }
 
         // Call original setter to maintain normal functionality
@@ -211,14 +211,15 @@ export class EventHandlerHooks {
       });
 
       const hookedSetter = function(this: any, handler: any) {
-        // Breakpoint if recording is active AND in breakpoint mode (while malicious script is on call stack)
-        if (recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint' && shouldHookEventHandlerSetter(this, propertyName)) {
+        // Detect surveillance and get filter decision (let evidence collector decide based on filters)
+        const { shouldProceed } = (this instanceof Element) 
+          ? self.monitorEventHandlerAssignment(this, propertyName, handler)
+          : { shouldProceed: false };
+
+        // Breakpoint if recording is active AND in breakpoint mode AND filters pass
+        if (shouldProceed && recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint') {
           console.log(`🛑 Breakpoint: Event handler setter ${propertyName} (fallback) on`, this);
           debugger; // eslint-disable-line no-debugger
-        }
-
-        if (shouldHookEventHandlerSetter(this, propertyName)) {
-          self.monitorEventHandlerAssignment(this, propertyName, handler);
         }
         this[`_${propertyName}`] = handler;
         return handler; // Return the assigned value
@@ -260,28 +261,36 @@ export class EventHandlerHooks {
   /**
    * Called when surveillance is detected - script setting event handler property
    */
-  private monitorEventHandlerAssignment(target: any, propertyName: string, handler: any): void {
+  private monitorEventHandlerAssignment(target: any, propertyName: string, handler: any): { shouldProceed: boolean } {
     try {
       // Only monitor if handler is actually a function (ignore null/undefined cleanup)
       if (typeof handler !== 'function') {
-        return;
+        return { shouldProceed: false };
+      }
+
+      // Basic config check - should this element/property be monitored?
+      if (!shouldHookEventHandlerSetter(target, propertyName)) {
+        return { shouldProceed: false };
       }
 
       console.debug(`[${this.name}] Surveillance detected: Event handler assignment ${propertyName} on`, target);
 
-      // Create evidence for event handler assignment
+      // Create evidence for event handler assignment (includes filter checks)
       // Remove 'on' prefix from property name: 'onkeydown' -> 'keydown'
       const eventType = propertyName.substring(2);
       
-      this.evidenceCollector.createAndSendEvidence(
+      const result = this.evidenceCollector.createAndSendEvidence(
         target,
         eventType,
         'eventHandler'
       );
 
+      return result;
+
     } catch (error) {
       console.error(`[${this.name}] Error monitoring event handler assignment:`, error);
       // Don't throw - surveillance detection should never break page functionality
+      return { shouldProceed: false };
     }
   }
 }

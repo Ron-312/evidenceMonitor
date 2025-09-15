@@ -40,14 +40,14 @@ export class AddEventListenerHook {
         listener: EventListenerOrEventListenerObject | null,
         options?: boolean | AddEventListenerOptions
       ) {
-        // Breakpoint if recording is active AND in breakpoint mode (while malicious script is on call stack)
-        if (recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint' && self.shouldMonitorTarget(this, type)) {
+        // Monitor this addEventListener call for surveillance and get filter decision
+        const { shouldProceed } = self.monitorAddEventListenerCall(this, type, listener, options);
+
+        // Breakpoint if recording is active AND in breakpoint mode AND filters pass
+        if (shouldProceed && recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint') {
           console.log(`🛑 Breakpoint: addEventListener('${type}') on`, this);
           debugger; // eslint-disable-line no-debugger
         }
-
-        // Monitor this addEventListener call for surveillance
-        self.monitorAddEventListenerCall(this, type, listener, options);
 
         // Always execute the original addEventListener call
         return self.originalAddEventListener.call(this, type, listener, options);
@@ -100,21 +100,21 @@ export class AddEventListenerHook {
     eventType: string,
     listener: EventListenerOrEventListenerObject | null,
     options?: boolean | AddEventListenerOptions
-  ): void {
+  ): { shouldProceed: boolean } {
     try {
-      // Determine if this addEventListener call should be monitored
-      if (!this.shouldMonitorTarget(target, eventType)) {
-        return; // Skip monitoring for this target/event combination
-      }
-
       // Handle Elements (form inputs, etc.) only
       if (target instanceof Element) {
-        this.evidenceCollector.createAndSendEvidence(
+        // Basic config check - should this element/event be monitored?
+        if (!this.shouldMonitorTarget(target, eventType)) {
+          return { shouldProceed: false }; // Skip monitoring for this target/event combination
+        }
+
+        const result = this.evidenceCollector.createAndSendEvidence(
           target,
           eventType,
           'addEventListener'
         );
-        return;
+        return result;
       }
 
       // Log unexpected target types for debugging (non-Elements are ignored)
@@ -123,6 +123,8 @@ export class AddEventListenerHook {
         eventType,
         targetToString: target.toString()
       });
+
+      return { shouldProceed: false };
 
     } catch (error) {
       console.error(`[${this.name}] Error during surveillance monitoring:`, error, {
@@ -133,6 +135,7 @@ export class AddEventListenerHook {
         }
       });
       // Continue silently - never break the page
+      return { shouldProceed: false };
     }
   }
 

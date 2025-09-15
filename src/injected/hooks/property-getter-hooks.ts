@@ -170,14 +170,14 @@ export class PropertyGetterHooks {
       // Install monitored property getter
       Object.defineProperty(target, propertyName, {
         get: function() {
-          // Breakpoint if recording is active AND in breakpoint mode (while malicious script is on call stack)
-          if (recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint') {
-            console.log(`🛑 Breakpoint: Property access ${propertyName} on`, this);
+          // Monitor this property access for surveillance and get filter decision
+          const { shouldProceed } = self.monitorPropertyAccess(this, propertyName);
+
+          // Breakpoint if recording is active AND in breakpoint mode AND filters pass
+          if (shouldProceed && recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint') {
+            console.debug(`🛑 Breakpoint: Property access ${propertyName} on`, this);
             debugger; // eslint-disable-line no-debugger
           }
-
-          // Monitor this property access for surveillance
-          self.monitorPropertyAccess(this, propertyName);
 
           // Always return the original value - this must never fail
           return originalGetter.call(this);
@@ -197,21 +197,24 @@ export class PropertyGetterHooks {
   /**
    * Monitors property access and creates evidence if surveillance detected
    */
-  private monitorPropertyAccess(target: any, propertyName: string): void {
+  private monitorPropertyAccess(target: any, propertyName: string): { shouldProceed: boolean } {
     try {
       // Only monitor if this is a surveillance pattern
       if (!this.shouldMonitorPropertyAccess(target, propertyName)) {
-        return; // Skip monitoring for this target/property combination
+        return { shouldProceed: false }; // Skip monitoring for this target/property combination
       }
 
       // Create evidence for property access surveillance (Elements only)
       if (target instanceof Element) {
-        this.evidenceCollector.createAndSendEvidence(
+        const result = this.evidenceCollector.createAndSendEvidence(
           target,
           propertyName,
           'property'
         );
+        return result;
       }
+
+      return { shouldProceed: false };
 
     } catch (error) {
       console.error(`[${this.name}] Error during property access monitoring:`, error, {
@@ -222,6 +225,7 @@ export class PropertyGetterHooks {
         }
       });
       // Continue silently - never break property access
+      return { shouldProceed: false };
     }
   }
 

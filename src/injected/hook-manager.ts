@@ -6,6 +6,7 @@ import { EvidenceCollector } from './evidence-collector';
 import { AddEventListenerHook } from './hooks/addEventListener-hook';
 import { PropertyGetterHooks } from './hooks/property-getter-hooks';
 import { EventHandlerHooks } from './hooks/event-handler-hooks';
+import { filterManager } from './filter-manager';
 
 /**
  * Central coordinator for all surveillance detection hooks
@@ -128,6 +129,7 @@ export class HookManager {
       },
       elementRegistry: this.elementRegistry.getStats(),
       evidenceCollector: this.evidenceCollector.getStats(),
+      filterManager: filterManager.getStats(),
       hooks: {
         addEventListener: this.addEventListenerHook.isInstalled(),
         propertyGetters: this.propertyGetterHooks.isInstalled(),

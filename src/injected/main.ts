@@ -3,6 +3,7 @@
 
 import { HookManager } from './hook-manager';
 import { recordingModeHandler, RecordingMode } from './recording-modes';
+import { filterManager, FilterOptions } from './filter-manager';
 
 // ============================================================================
 // INITIALIZATION
@@ -16,16 +17,8 @@ if (!(window as any).__REFLECTIZ_INJECTED__) {
     // Initialize hook management system
     const hookManager = new HookManager();
     
-    // Install all surveillance detection hooks
-    hookManager.installAllHooks();
-    
-    // Signal to content script that we're ready
-    hookManager.notifyReady();
-    
-    // Mark as initialized and expose for debugging
-    (window as any).__REFLECTIZ_INJECTED__ = hookManager;
-    
-    // Set up message listeners for recording mode and state
+    // Set up message listeners BEFORE installing hooks and signaling ready
+    // This ensures we can receive initial state from content script immediately
     window.addEventListener('message', (event) => {
       if (event.source !== window) return;
       
@@ -37,8 +30,21 @@ if (!(window as any).__REFLECTIZ_INJECTED__) {
         const recording = event.data.recording as boolean;
         recordingModeHandler.setRecording(recording);
         console.debug(`[InjectedScript] Recording state set to: ${recording}`);
+      } else if (event.data.type === 'SET_FILTERS') {
+        const filters = event.data.filters as FilterOptions;
+        filterManager.setFilters(filters);
+        console.debug(`[InjectedScript] Filters updated:`, filters);
       }
     });
+    
+    // Install all surveillance detection hooks
+    hookManager.installAllHooks();
+    
+    // Signal to content script that we're ready (this triggers state resync)
+    hookManager.notifyReady();
+    
+    // Mark as initialized and expose for debugging
+    (window as any).__REFLECTIZ_INJECTED__ = hookManager;
     
     console.debug('[InjectedScript] Reflectiz surveillance detector running');
     

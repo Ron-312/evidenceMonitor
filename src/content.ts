@@ -1,8 +1,16 @@
+interface FilterOptions {
+  elementSelector: string;        // CSS selector (e.g., "#myInput, .password")
+  attributeFilters: string;       // name=value pairs (e.g., "name=password, type=email") 
+  stackKeywordFilter: string;     // case-insensitive keyword (e.g., "analytics")
+}
+
 interface HudState {
   recording: boolean;
   eventCount: number;
   atCap: boolean;
   recordingMode: 'console' | 'breakpoint';
+  filters: FilterOptions;
+  theme: 'dark' | 'light';
 }
 
 class HUD {
@@ -11,10 +19,26 @@ class HUD {
     recording: false,
     eventCount: 0,
     atCap: false,
-    recordingMode: 'console'
+    recordingMode: 'console',
+    filters: {
+      elementSelector: '',
+      attributeFilters: '',
+      stackKeywordFilter: ''
+    },
+    theme: 'dark'
   };
 
   constructor() {
+    // Load saved theme preference
+    try {
+      const savedTheme = localStorage.getItem('hud-theme');
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        this.state.theme = savedTheme;
+      }
+    } catch (error) {
+      console.warn('[HUD] Failed to load theme preference:', error);
+    }
+
     this.hudElement = this.createHUD();
     this.attachHUD();
     this.setupMessageListener();
@@ -26,7 +50,8 @@ class HUD {
     hud.id = 'evidence-hud-overlay';
     hud.innerHTML = `
       <div class="hud-header">
-        <h3>Input Evidence</h3>
+        <h3>Input Monitoring</h3>
+        <button class="theme-toggle" title="Toggle light/dark theme">🌙</button>
       </div>
       <div class="hud-content">
         
@@ -49,23 +74,45 @@ class HUD {
         
         <!-- Recording Mode Options -->
         <div class="recording-mode-section">
-          <h4>Recording Mode</h4>
-          <div class="radio-group">
-            <label class="radio-option">
-              <input type="radio" name="recordingMode" value="console" checked>
-              <span>Log to Console</span>
-            </label>
-            <label class="radio-option">
-              <input type="radio" name="recordingMode" value="breakpoint">
-              <span>Breakpoint (debugger)</span>
-            </label>
+          <h4 class="recording-mode-header">
+            <span>Recording Mode</span>
+            <button class="recording-mode-toggle" type="button">▼</button>
+          </h4>
+          <div class="recording-mode-content" style="display: none;">
+            <div class="toggle-switch-container">
+              <span class="toggle-label left">Console</span>
+              <div class="toggle-switch" data-mode="console">
+                <div class="toggle-slider"></div>
+              </div>
+              <span class="toggle-label right">Breakpoint</span>
+            </div>
           </div>
         </div>
         
-        <!-- TODO: Filter Options Section  
-             - Element Selector input: CSS selector to limit monitoring (e.g., "#myInput, .password")
-             - Attribute Filter: name/value pairs to filter elements by attributes
-             - Stack Keyword Filter: only track if stack trace contains specified keyword -->
+        <!-- Filter Options Section -->
+        <div class="filter-section">
+          <h4 class="filter-header">
+            <span>Filter Options</span>
+            <button class="filter-toggle" type="button">▼</button>
+          </h4>
+          <div class="filter-content" style="display: none;">
+            <div class="filter-option">
+              <label for="elementSelector">Element Selector (CSS):</label>
+              <input type="text" id="elementSelector" class="element-selector" 
+                     placeholder="e.g., #myInput, .password, input[name='secret']">
+            </div>
+            <div class="filter-option">
+              <label for="attributeFilters">Attribute Filters:</label>
+              <input type="text" id="attributeFilters" class="attribute-filters" 
+                     placeholder="e.g., name=password, type=email">
+            </div>
+            <div class="filter-option">
+              <label for="stackKeywordFilter">Stack Keyword Filter:</label>
+              <input type="text" id="stackKeywordFilter" class="stack-keyword-filter" 
+                     placeholder="e.g., analytics, tracking">
+            </div>
+          </div>
+        </div>
         
         <!-- TODO: Track Events Checkboxes
              - Input Value Access: Monitor property getters (value, nodeValue)
@@ -95,16 +142,56 @@ class HUD {
     const stopBtn = this.hudElement.querySelector('.stop-recording') as HTMLButtonElement;
     const exportBtn = this.hudElement.querySelector('.export-data') as HTMLButtonElement;
     const clearBtn = this.hudElement.querySelector('.clear-data') as HTMLButtonElement;
-    const recordingModeRadios = this.hudElement.querySelectorAll('input[name="recordingMode"]') as NodeListOf<HTMLInputElement>;
+    const themeToggle = this.hudElement.querySelector('.theme-toggle') as HTMLButtonElement;
+    const toggleSwitch = this.hudElement.querySelector('.toggle-switch') as HTMLElement;
 
     startBtn?.addEventListener('click', () => this.toggleRecording());
     stopBtn?.addEventListener('click', () => this.toggleRecording());
     exportBtn?.addEventListener('click', () => this.exportData());
     clearBtn?.addEventListener('click', () => this.clearData());
 
-    // Recording mode radio button handlers
-    recordingModeRadios.forEach(radio => {
-      radio.addEventListener('change', () => this.onRecordingModeChange());
+    // Recording mode toggle switch handler
+    toggleSwitch?.addEventListener('click', () => this.onRecordingModeToggle());
+
+    // Theme toggle handler
+    themeToggle?.addEventListener('click', () => this.onThemeToggle());
+    
+    // Recording mode section handlers
+    this.setupRecordingModeHandlers();
+    
+    // Filter section handlers
+    this.setupFilterHandlers();
+  }
+
+  private setupFilterHandlers(): void {
+    const filterToggle = this.hudElement.querySelector('.filter-toggle') as HTMLButtonElement;
+    const filterContent = this.hudElement.querySelector('.filter-content') as HTMLElement;
+    const elementSelectorInput = this.hudElement.querySelector('.element-selector') as HTMLInputElement;
+    const attributeFiltersInput = this.hudElement.querySelector('.attribute-filters') as HTMLInputElement;
+    const stackKeywordFilterInput = this.hudElement.querySelector('.stack-keyword-filter') as HTMLInputElement;
+
+    // Toggle filter section visibility
+    filterToggle?.addEventListener('click', () => {
+      const isVisible = filterContent.style.display !== 'none';
+      filterContent.style.display = isVisible ? 'none' : 'block';
+      filterToggle.textContent = isVisible ? '▼' : '▲';
+    });
+
+    // Filter input change handlers
+    elementSelectorInput?.addEventListener('input', () => this.onFilterChange());
+    attributeFiltersInput?.addEventListener('input', () => this.onFilterChange());
+    stackKeywordFilterInput?.addEventListener('input', () => this.onFilterChange());
+  }
+
+  private setupRecordingModeHandlers(): void {
+    const recordingModeToggle = this.hudElement.querySelector('.recording-mode-toggle') as HTMLButtonElement;
+    const recordingModeContent = this.hudElement.querySelector('.recording-mode-content') as HTMLElement;
+
+    // Toggle recording mode section visibility
+    recordingModeToggle?.addEventListener('click', () => {
+      const isVisible = recordingModeContent.style.display !== 'none';
+      recordingModeContent.style.display = isVisible ? 'none' : 'block';
+      recordingModeToggle.textContent = isVisible ? '▼' : '▲';
     });
   }
 
@@ -121,23 +208,11 @@ class HUD {
         case 'HUD_MESSAGE':
           this.showMessage(message.message, message.level || 'info');
           break;
-        case 'SET_RECORDING_MODE':
-          // Forward recording mode to injected script
-          window.postMessage({ 
-            type: 'SET_RECORDING_MODE', 
-            recordingMode: message.recordingMode 
-          }, '*');
-          break;
-        case 'SET_RECORDING_STATE':
-          // Forward recording state to injected script
-          window.postMessage({ 
-            type: 'SET_RECORDING_STATE', 
-            recording: message.recording 
-          }, '*');
-          break;
       }
     });
   }
+
+
 
   private requestStatus(): void {
     chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
@@ -146,7 +221,12 @@ class HUD {
           recording: response.recording,
           eventCount: response.eventCount,
           atCap: response.atCap,
-          recordingMode: response.recordingMode || 'console'
+          recordingMode: response.recordingMode || 'console',
+          filters: response.filters || {
+            elementSelector: '',
+            attributeFilters: '',
+            stackKeywordFilter: ''
+          }
         });
       }
     });
@@ -171,18 +251,50 @@ class HUD {
     chrome.runtime.sendMessage({ type: 'CLEAR_EVENTS' });
   }
 
-  private onRecordingModeChange(): void {
-    const selectedRadio = this.hudElement.querySelector('input[name="recordingMode"]:checked') as HTMLInputElement;
-    if (selectedRadio) {
-      const mode = selectedRadio.value as 'console' | 'breakpoint';
-      this.updateState({ recordingMode: mode });
-      
-      // Send mode change to background script
-      chrome.runtime.sendMessage({ 
-        type: 'SET_RECORDING_MODE', 
-        recordingMode: mode 
-      });
+  private onThemeToggle(): void {
+    const newTheme = this.state.theme === 'dark' ? 'light' : 'dark';
+    this.updateState({ theme: newTheme });
+    
+    // Save theme preference to localStorage
+    try {
+      localStorage.setItem('hud-theme', newTheme);
+    } catch (error) {
+      console.warn('[HUD] Failed to save theme preference:', error);
     }
+  }
+
+  private onRecordingModeToggle(): void {
+    const toggleSwitch = this.hudElement.querySelector('.toggle-switch') as HTMLElement;
+    const currentMode = toggleSwitch.getAttribute('data-mode') as 'console' | 'breakpoint';
+    const newMode = currentMode === 'console' ? 'breakpoint' : 'console';
+    
+    this.updateState({ recordingMode: newMode });
+    
+    // Send mode change to background script
+    chrome.runtime.sendMessage({ 
+      type: 'SET_RECORDING_MODE', 
+      recordingMode: newMode 
+    });
+  }
+
+  private onFilterChange(): void {
+    const elementSelectorInput = this.hudElement.querySelector('.element-selector') as HTMLInputElement;
+    const attributeFiltersInput = this.hudElement.querySelector('.attribute-filters') as HTMLInputElement;
+    const stackKeywordFilterInput = this.hudElement.querySelector('.stack-keyword-filter') as HTMLInputElement;
+
+    const filters: FilterOptions = {
+      elementSelector: elementSelectorInput?.value || '',
+      attributeFilters: attributeFiltersInput?.value || '',
+      stackKeywordFilter: stackKeywordFilterInput?.value || ''
+    };
+
+    this.updateState({ filters });
+
+    // Send filter changes to background script
+    chrome.runtime.sendMessage({
+      type: 'SET_FILTERS',
+      filters: filters
+    });
   }
 
   private updateState(newState: Partial<HudState>): void {
@@ -216,10 +328,45 @@ class HUD {
     exportBtn.disabled = this.state.eventCount === 0;
     clearBtn.disabled = this.state.eventCount === 0;
 
-    // Update recording mode radio buttons
-    const recordingModeRadio = this.hudElement.querySelector(`input[name="recordingMode"][value="${this.state.recordingMode}"]`) as HTMLInputElement;
-    if (recordingModeRadio) {
-      recordingModeRadio.checked = true;
+    // Update recording mode toggle switch
+    const toggleSwitch = this.hudElement.querySelector('.toggle-switch') as HTMLElement;
+    const leftLabel = this.hudElement.querySelector('.toggle-label.left') as HTMLElement;
+    const rightLabel = this.hudElement.querySelector('.toggle-label.right') as HTMLElement;
+    
+    if (toggleSwitch && leftLabel && rightLabel) {
+      toggleSwitch.setAttribute('data-mode', this.state.recordingMode);
+      
+      // Update label active states
+      if (this.state.recordingMode === 'console') {
+        leftLabel.classList.add('active');
+        rightLabel.classList.remove('active');
+      } else {
+        leftLabel.classList.remove('active');
+        rightLabel.classList.add('active');
+      }
+    }
+
+    // Update filter input values
+    const elementSelectorInput = this.hudElement.querySelector('.element-selector') as HTMLInputElement;
+    const attributeFiltersInput = this.hudElement.querySelector('.attribute-filters') as HTMLInputElement;
+    const stackKeywordFilterInput = this.hudElement.querySelector('.stack-keyword-filter') as HTMLInputElement;
+
+    if (elementSelectorInput) {
+      elementSelectorInput.value = this.state.filters.elementSelector;
+    }
+    if (attributeFiltersInput) {
+      attributeFiltersInput.value = this.state.filters.attributeFilters;
+    }
+    if (stackKeywordFilterInput) {
+      stackKeywordFilterInput.value = this.state.filters.stackKeywordFilter;
+    }
+
+    // Update theme
+    this.hudElement.setAttribute('data-theme', this.state.theme);
+    const themeToggle = this.hudElement.querySelector('.theme-toggle') as HTMLButtonElement;
+    if (themeToggle) {
+      themeToggle.textContent = this.state.theme === 'dark' ? '🌙' : '☀️';
+      themeToggle.title = this.state.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
     }
   }
 
@@ -293,22 +440,42 @@ class HUD {
  * Injects the main surveillance detection script into the page's main world
  * This allows us to intercept native APIs that are not accessible from content script
  */
-function injectSurveillanceScript(): void {
-  try {
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('injected.js');
-    script.onload = () => {
-      console.debug('[ContentScript] Injected surveillance script loaded');
-      script.remove(); // Clean up after injection
-    };
-    script.onerror = () => {
-      console.error('[ContentScript] Failed to load injected surveillance script');
-    };
-    
-    (document.head || document.documentElement).appendChild(script);
-  } catch (error) {
-    console.error('[ContentScript] Failed to inject surveillance script:', error);
-  }
+/**
+ * Injects surveillance script with complete configuration atomically
+ * Eliminates race conditions by ensuring script never starts without full config
+ */
+function waitForDomRoot(): Promise<HTMLElement> {
+  return new Promise((resolve) => {
+    const root = (document.head || document.documentElement || document.body) as HTMLElement | null;
+    if (root) return resolve(root);
+    const observer = new MutationObserver(() => {
+      const r = (document.head || document.documentElement || document.body) as HTMLElement | null;
+      if (r) {
+        observer.disconnect();
+        resolve(r);
+      }
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  });
+}
+
+function injectSurveillanceScript(): Promise<void> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const root = await waitForDomRoot();
+      const surveillanceScript = document.createElement('script');
+      surveillanceScript.src = chrome.runtime.getURL('injected.js');
+      surveillanceScript.onload = () => {
+        console.debug('[ContentScript] Surveillance script loaded');
+        surveillanceScript.remove();
+        resolve();
+      };
+      surveillanceScript.onerror = () => reject(new Error('Failed to load injected surveillance script'));
+      root.appendChild(surveillanceScript);
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
 
 /**
@@ -342,10 +509,51 @@ function setupInjectedScriptBridge(): void {
       console.debug('[ContentScript] Injected script ready, sending handshake');
       // Send ready signal back to injected script
       window.postMessage({ type: 'CONTENT_SCRIPT_READY' }, '*');
+      resyncStateFromBackground();
     }
   });
   
   console.debug('[ContentScript] Injected script bridge set up');
+}
+
+function resyncStateFromBackground(): void {
+  chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
+    if (!response) return;
+    // Defer slightly so injected main’s message listener is definitely installed
+    setTimeout(() => {
+      window.postMessage({ type: 'SET_FILTERS',        filters: response.filters || { elementSelector: '', attributeFilters: '', stackKeywordFilter: '' } }, '*');
+      window.postMessage({ type: 'SET_RECORDING_MODE', recordingMode: response.recordingMode || 'console' }, '*');
+      window.postMessage({ type: 'SET_RECORDING_STATE', recording: !!response.recording }, '*');
+    }, 0);
+  });
+}
+
+/**
+ * Sets up control message forwarding in all frames
+ */
+function setupControlForwarding(): void {
+  chrome.runtime.onMessage.addListener((message) => {
+    switch (message.type) {
+      case 'SET_RECORDING_MODE':
+        window.postMessage({
+          type: 'SET_RECORDING_MODE',
+          recordingMode: message.recordingMode
+        }, '*');
+        break;
+      case 'SET_RECORDING_STATE':
+        window.postMessage({
+          type: 'SET_RECORDING_STATE',
+          recording: message.recording
+        }, '*');
+        break;
+      case 'SET_FILTERS':
+        window.postMessage({
+          type: 'SET_FILTERS',
+          filters: message.filters
+        }, '*');
+        break;
+    }
+  });
 }
 
 // ============================================================================
@@ -353,24 +561,32 @@ function setupInjectedScriptBridge(): void {
 // ============================================================================
 
 // Initialize everything when DOM is ready
-function initialize(): void {
+async function initialize(): Promise<void> {
   console.debug('[ContentScript] Initializing Reflectiz content script...');
   
-  // Inject surveillance detection script into main world
-  injectSurveillanceScript();
-  
-  // Set up communication bridge
-  setupInjectedScriptBridge();
-  
-  // Only initialize HUD in the top frame (not in iframes)
-  if (window === window.top) {
-    new HUD();
-    console.debug('[ContentScript] HUD initialized in main frame');
-  } else {
-    console.debug('[ContentScript] Skipping HUD in iframe');
+  try {
+    // Inject surveillance script with complete config atomically - no race conditions
+    await injectSurveillanceScript();
+    
+    // Set up communication bridge for evidence collection
+    setupInjectedScriptBridge();
+
+    // Forward control messages for runtime config changes only
+    setupControlForwarding();
+    
+    // Only initialize HUD in the top frame (not in iframes)
+    if (window === window.top) {
+      new HUD();
+      console.debug('[ContentScript] HUD initialized in main frame');
+    } else {
+      console.debug('[ContentScript] Skipping HUD in iframe');
+    }
+    
+    console.debug('[ContentScript] Content script initialization complete');
+  } catch (error) {
+    console.error('[ContentScript] Failed to initialize:', error);
+    // Continue anyway - some functionality might still work
   }
-  
-  console.debug('[ContentScript] Content script initialization complete');
 }
 
 // Start initialization
