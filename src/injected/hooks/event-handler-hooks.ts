@@ -2,8 +2,8 @@
 // Monitors event handler assignment (onkeydown, oninput, etc.) to detect surveillance scripts
 
 import { EvidenceCollector } from '../evidence-collector';
-import { shouldHookEventHandlerSetter, EVIDENCE_CONFIG } from '../../evidence-config';
-import { recordingModeHandler } from '../recording-modes';
+import { shouldHookEventHandlerSetter, EVIDENCE_CONFIG } from '../config/evidence-config';
+import { recordingModeHandler } from '../state/recording-modes-manager';
 
 /**
  * Stored original property descriptors for restoration

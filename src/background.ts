@@ -3,59 +3,15 @@
 
 /// <reference types="chrome"/>
 
-interface EvidenceEvent {
-  actionId: string;
-  type: string;
-  start: number;
-  duration: number;
-  data: string;
-  target: { id: string };
-  stackTrace: string[];
-}
-
-interface FilterOptions {
-  elementSelector: string;        // CSS selector (e.g., "#myInput, .password")
-  attributeFilters: string;       // name=value pairs (e.g., "name=password, type=email") 
-  stackKeywordFilter: string;     // case-insensitive keyword (e.g., "analytics")
-}
-
-interface TabData {
-  events: EvidenceEvent[];
-  recording: boolean;
-  recordingMode: 'console' | 'breakpoint';
-  domain: string;
-  createdAt: number;
-  filters: FilterOptions;
-}
-
-interface HudMessage {
-  type: 'HUD_MESSAGE' | 'HUD_UPDATE' | 'SET_RECORDING_MODE' | 'SET_RECORDING_STATE' | 'SET_FILTERS';
-  level?: 'info' | 'warning' | 'success' | 'error';
-  message?: string;
-  recording?: boolean;
-  eventCount?: number;
-  atCap?: boolean;
-  recordingMode?: 'console' | 'breakpoint';
-  filters?: FilterOptions;
-}
-
-interface BackgroundMessage {
-  type: 'EVIDENCE_EVENT' | 'TOGGLE_RECORDING' | 'GET_STATUS' | 'EXPORT_EVENTS' | 'CLEAR_EVENTS' | 'SET_RECORDING_MODE' | 'SET_FILTERS';
-  event?: EvidenceEvent;
-  recordingMode?: 'console' | 'breakpoint';
-  filters?: FilterOptions;
-}
-
-interface ExportData {
-  metadata: {
-    domain: string;
-    exportedAt: string;
-    eventCount: number;
-    recordingStarted: string;
-    autoExported: boolean;
-  };
-  events: EvidenceEvent[];
-}
+import {
+  EvidenceEvent,
+  FilterOptions,
+  TrackEventsState,
+  TabData,
+  HudMessage,
+  BackgroundMessage,
+  ExportData
+} from './shared-types';
 
 class EvidenceManager {
   private tabData: Map<number, TabData>;
@@ -93,7 +49,8 @@ class EvidenceManager {
             eventCount: this.getEventCount(tabId),
             atCap: this.isAtCap(tabId),
             recordingMode: this.getRecordingMode(tabId),
-            filters: this.getFilters(tabId)
+            filters: this.getFilters(tabId),
+            trackEvents: this.getTrackEvents(tabId)
           });
           break;
           
@@ -118,6 +75,13 @@ class EvidenceManager {
           if (message.filters && sender.tab?.url) {
             this.setFilters(tabId, message.filters, sender.tab.url);
             sendResponse({ filters: message.filters });
+          }
+          break;
+
+        case 'SET_TRACK_EVENTS':
+          if (message.trackEvents && sender.tab?.url) {
+            this.setTrackEvents(tabId, message.trackEvents, sender.tab.url);
+            sendResponse({ trackEvents: message.trackEvents });
           }
           break;
       }
@@ -149,6 +113,12 @@ class EvidenceManager {
           elementSelector: '',
           attributeFilters: '',
           stackKeywordFilter: ''
+        },
+        trackEvents: {
+          inputValueAccess: true,
+          inputEvents: true,
+          formSubmit: true,
+          formDataCreation: true
         }
       });
     }
@@ -279,11 +249,35 @@ class EvidenceManager {
     if (tabInfo) {
       tabInfo.filters = filters;
       console.debug(`[Background] Filters updated for tab ${tabId}:`, filters);
-      
+
       // Send filter updates to injected script
       this.sendToTab(tabId, {
         type: 'SET_FILTERS',
         filters: filters
+      });
+    }
+  }
+
+  private getTrackEvents(tabId: number): TrackEventsState {
+    return this.tabData.get(tabId)?.trackEvents || {
+      inputValueAccess: true,
+      inputEvents: true,
+      formSubmit: true,
+      formDataCreation: true
+    };
+  }
+
+  private setTrackEvents(tabId: number, trackEvents: TrackEventsState, url: string): void {
+    this.initializeTab(tabId, url);
+    const tabInfo = this.tabData.get(tabId);
+    if (tabInfo) {
+      tabInfo.trackEvents = trackEvents;
+      console.debug(`[Background] Track Events updated for tab ${tabId}:`, trackEvents);
+
+      // Send track events updates to injected script
+      this.sendToTab(tabId, {
+        type: 'SET_TRACK_EVENTS',
+        trackEvents: trackEvents
       });
     }
   }

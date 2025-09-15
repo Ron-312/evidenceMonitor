@@ -1,41 +1,105 @@
+/* Theme System - CSS Custom Properties */
+
+#evidence-hud-overlay {
+    /* Dark Theme (Default) */
+    --hud-bg: rgba(0, 0, 0, 0.9);
+    --hud-text: white;
+    --hud-border: rgba(255, 255, 255, 0.1);
+    --hud-shadow: rgba(0, 0, 0, 0.3);
+    --section-bg: rgba(255, 255, 255, 0.1);
+    --section-bg-hover: rgba(255, 255, 255, 0.15);
+    --input-bg: rgba(0, 0, 0, 0.3);
+    --input-bg-focus: rgba(0, 0, 0, 0.5);
+    --input-border: rgba(255, 255, 255, 0.2);
+    --input-border-focus: #4CAF50;
+    --text-secondary: #ccc;
+    --text-muted: #666;
+    --placeholder-color: #888;
+    --accent-color: #4CAF50;
+}
+
+#evidence-hud-overlay[data-theme="light"] {
+    /* Light Theme */
+    --hud-bg: rgba(255, 255, 255, 0.95);
+    --hud-text: #333;
+    --hud-border: rgba(0, 0, 0, 0.1);
+    --hud-shadow: rgba(0, 0, 0, 0.15);
+    --section-bg: rgba(0, 0, 0, 0.05);
+    --section-bg-hover: rgba(0, 0, 0, 0.08);
+    --input-bg: rgba(0, 0, 0, 0.03);
+    --input-bg-focus: rgba(0, 0, 0, 0.06);
+    --input-border: rgba(0, 0, 0, 0.15);
+    --input-border-focus: #4CAF50;
+    --text-secondary: #555;
+    --text-muted: #999;
+    --placeholder-color: #aaa;
+    --accent-color: #4CAF50;
+}
+
 #evidence-hud-overlay {
     position: fixed;
     top: 20px;
     right: 20px;
     width: 350px;
-    background: rgba(0, 0, 0, 0.9);
-    color: white;
+    background: var(--hud-bg);
+    color: var(--hud-text);
     border-radius: 8px;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     font-size: 16px;
     z-index: 999999;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px var(--hud-shadow);
+    border: 1px solid var(--hud-border);
     overflow: hidden;
+    transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 
 /* Draggable Header */
 
 #evidence-hud-overlay .hud-header {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--section-bg);
     margin: -15px -15px 15px -15px;
-    padding: 18px 18px;
+    padding: 25px 25px 15px;
     cursor: move;
     user-select: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--hud-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background 0.2s ease;
 }
 
 #evidence-hud-overlay .hud-header:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--section-bg-hover);
 }
 
 #evidence-hud-overlay .hud-header h3 {
     margin: 0;
-    color: #4CAF50;
-    font-size: 18px;
-    font-weight: bold;
+    color: var(--accent-color);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    flex-grow: 1;
     text-align: center;
+    line-height: 1.2;
+}
+
+#evidence-hud-overlay .theme-toggle {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#evidence-hud-overlay .theme-toggle:hover {
+    background: var(--section-bg-hover);
 }
 
 
@@ -51,19 +115,20 @@
 #evidence-hud-overlay .status-section {
     margin-bottom: 15px;
     padding: 10px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--section-bg);
     border-radius: 6px;
+    transition: background 0.3s ease;
 }
 
 #evidence-hud-overlay .recording-status {
     font-weight: bold;
     margin-bottom: 5px;
-    color: #666;
+    color: var(--text-muted);
 }
 
 #evidence-hud-overlay .event-count {
     font-size: 11px;
-    color: #666;
+    color: var(--text-muted);
 }
 
 
@@ -134,6 +199,7 @@
 
 #evidence-hud-overlay .message-display {
     margin-top: 10px;
+    margin-bottom: 10px;
     padding: 8px;
     border-radius: 4px;
     font-size: 11px;
@@ -162,4 +228,289 @@
     background: rgba(244, 67, 54, 0.2);
     color: #E57373;
     border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+
+/* Recording Mode Section */
+
+#evidence-hud-overlay .recording-mode-section {
+    margin-bottom: 15px;
+    /* padding: 10px; */
+    background: var(--section-bg);
+    border-radius: 6px;
+    transition: background 0.3s ease;
+}
+
+#evidence-hud-overlay .recording-mode-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    margin: 10px 0;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.2s ease;
+}
+
+#evidence-hud-overlay .recording-mode-header:hover {
+    background: var(--section-bg-hover);
+}
+
+#evidence-hud-overlay .recording-mode-header span {
+    color: var(--accent-color);
+    font-size: 14px;
+    font-weight: bold;
+    margin: 0;
+}
+
+#evidence-hud-overlay .recording-mode-toggle {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    transition: transform 0.2s ease;
+}
+
+#evidence-hud-overlay .recording-mode-content {
+    padding: 10px 10px 10px 10px;
+}
+
+
+/* Toggle Switch Container */
+
+#evidence-hud-overlay .toggle-switch-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+#evidence-hud-overlay .toggle-label {
+    font-size: 13px;
+    color: var(--hud-text) !important;
+    font-weight: 500;
+    user-select: none;
+    transition: color 0.3s ease;
+}
+
+#evidence-hud-overlay .toggle-label.left.active {
+    color: var(--accent-color) !important;
+    font-weight: bold;
+}
+
+#evidence-hud-overlay .toggle-label.right.active {
+    color: var(--accent-color) !important;
+    font-weight: bold;
+}
+
+
+/* Explicit light mode text fixes for recording mode */
+
+#evidence-hud-overlay[data-theme="light"] .toggle-label {
+    color: #333 !important;
+}
+
+#evidence-hud-overlay[data-theme="light"] .toggle-label.active {
+    color: #4CAF50 !important;
+}
+
+
+/* Toggle Switch */
+
+#evidence-hud-overlay .toggle-switch {
+    position: relative;
+    width: 50px;
+    height: 24px;
+    background: var(--input-border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+    border: 1px solid var(--input-border);
+}
+
+#evidence-hud-overlay .toggle-switch:hover {
+    background: var(--section-bg-hover);
+}
+
+#evidence-hud-overlay .toggle-switch[data-mode="breakpoint"] {
+    background: var(--accent-color);
+}
+
+
+/* Toggle Slider */
+
+#evidence-hud-overlay .toggle-slider {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+#evidence-hud-overlay .toggle-switch[data-mode="breakpoint"] .toggle-slider {
+    transform: translateX(26px);
+}
+
+#evidence-hud-overlay .toggle-switch:active .toggle-slider {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transform: scale(1.1);
+}
+
+#evidence-hud-overlay .toggle-switch[data-mode="breakpoint"]:active .toggle-slider {
+    transform: translateX(26px) scale(1.1);
+}
+
+
+/* Filter Section */
+
+#evidence-hud-overlay .filter-section {
+    margin-bottom: 15px;
+    background: var(--section-bg);
+    border-radius: 6px;
+    transition: background 0.3s ease;
+}
+
+#evidence-hud-overlay .filter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    margin: 0;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.2s ease;
+}
+
+#evidence-hud-overlay .filter-header:hover {
+    background: var(--section-bg-hover);
+}
+
+#evidence-hud-overlay .filter-header span {
+    color: var(--accent-color);
+    font-size: 14px;
+    font-weight: bold;
+}
+
+#evidence-hud-overlay .filter-toggle {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    transition: transform 0.2s ease;
+}
+
+#evidence-hud-overlay .filter-content {
+    padding: 10px 10px 10px 10px;
+}
+
+#evidence-hud-overlay .filter-option {
+    margin-bottom: 12px;
+}
+
+#evidence-hud-overlay .filter-option:last-child {
+    margin-bottom: 0;
+}
+
+#evidence-hud-overlay .filter-option label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: bold;
+}
+
+#evidence-hud-overlay .filter-option input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    background: var(--input-bg);
+    color: var(--hud-text);
+    font-size: 12px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    transition: border-color 0.2s ease, background 0.2s ease;
+    box-sizing: border-box;
+}
+
+#evidence-hud-overlay .filter-option input[type="text"]:focus {
+    outline: none;
+    border-color: var(--input-border-focus);
+    background: var(--input-bg-focus);
+}
+
+#evidence-hud-overlay .filter-option input[type="text"]::placeholder {
+    color: var(--placeholder-color);
+    font-style: italic;
+}
+
+
+/* Track Events Section */
+
+#evidence-hud-overlay .track-events-section {
+    margin-bottom: 15px;
+    background: var(--section-bg);
+    border-radius: 6px;
+    transition: background 0.3s ease;
+}
+
+#evidence-hud-overlay .track-events-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    margin: 0;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.2s ease;
+}
+
+#evidence-hud-overlay .track-events-header:hover {
+    background: var(--section-bg-hover);
+}
+
+#evidence-hud-overlay .track-events-header span {
+    color: var(--accent-color);
+    font-size: 14px;
+    font-weight: bold;
+}
+
+#evidence-hud-overlay .track-events-toggle {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    transition: transform 0.2s ease;
+}
+
+#evidence-hud-overlay .track-events-content {
+    padding: 10px 10px 10px 10px;
+}
+
+#evidence-hud-overlay .track-events-option {
+    margin-bottom: 12px;
+}
+
+#evidence-hud-overlay .track-events-option:last-child {
+    margin-bottom: 0;
+}
+
+#evidence-hud-overlay .track-events-option label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: bold;
 }

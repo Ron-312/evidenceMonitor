@@ -1,22 +1,12 @@
 // Evidence Collector - Centralizes evidence creation, deduplication, and transmission
 // Handles handshake protocol and communication with content script
 
-import { ElementRegistry } from './element-registry';
+import { ElementRegistry } from './utils/element-registry';
 import { StackTrace } from './utils/stack-trace';
-import { generateEvidenceType } from '../evidence-config';
-import { recordingModeHandler } from './recording-modes';
-import { filterManager } from './filter-manager';
-
-// TODO: Move to shared interfaces file
-interface EvidenceEvent {
-  actionId: string;
-  type: string;
-  start: number;
-  duration: number;
-  data: string;
-  target: { id: string };
-  stackTrace: string[];
-}
+import { generateEvidenceType } from './config/evidence-config';
+import { recordingModeHandler } from './state/recording-modes-manager';
+import { filterManager } from './state/filter-manager';
+import { EvidenceEvent } from '../shared-types';
 
 export class EvidenceCollector {
   private elementRegistry: ElementRegistry;

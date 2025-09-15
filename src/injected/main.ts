@@ -2,8 +2,10 @@
 // Manages the lifecycle of the surveillance detection system
 
 import { HookManager } from './hook-manager';
-import { recordingModeHandler, RecordingMode } from './recording-modes';
-import { filterManager, FilterOptions } from './filter-manager';
+import { recordingModeHandler, RecordingMode } from './state/recording-modes-manager';
+import { filterManager, FilterOptions } from './state/filter-manager';
+import { trackEventsManager } from './state/track-events-manager';
+import { TrackEventsState } from '../shared-types';
 
 // ============================================================================
 // INITIALIZATION
@@ -34,6 +36,10 @@ if (!(window as any).__REFLECTIZ_INJECTED__) {
         const filters = event.data.filters as FilterOptions;
         filterManager.setFilters(filters);
         console.debug(`[InjectedScript] Filters updated:`, filters);
+      } else if (event.data.type === 'SET_TRACK_EVENTS') {
+        const trackEvents = event.data.trackEvents as TrackEventsState;
+        trackEventsManager.setTrackEvents(trackEvents);
+        console.debug(`[InjectedScript] Track Events updated:`, trackEvents);
       }
     });
     

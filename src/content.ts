@@ -1,17 +1,4 @@
-interface FilterOptions {
-  elementSelector: string;        // CSS selector (e.g., "#myInput, .password")
-  attributeFilters: string;       // name=value pairs (e.g., "name=password, type=email") 
-  stackKeywordFilter: string;     // case-insensitive keyword (e.g., "analytics")
-}
-
-interface HudState {
-  recording: boolean;
-  eventCount: number;
-  atCap: boolean;
-  recordingMode: 'console' | 'breakpoint';
-  filters: FilterOptions;
-  theme: 'dark' | 'light';
-}
+import { FilterOptions, TrackEventsState, HudState } from './shared-types';
 
 class HUD {
   private hudElement: HTMLDivElement;
@@ -24,6 +11,12 @@ class HUD {
       elementSelector: '',
       attributeFilters: '',
       stackKeywordFilter: ''
+    },
+    trackEvents: {
+      inputValueAccess: true,
+      inputEvents: true,
+      formSubmit: true,
+      formDataCreation: true
     },
     theme: 'dark'
   };
@@ -113,12 +106,44 @@ class HUD {
             </div>
           </div>
         </div>
-        
-        <!-- TODO: Track Events Checkboxes
-             - Input Value Access: Monitor property getters (value, nodeValue)
-             - Input Events: Monitor addEventListener calls (keydown, keyup, input, change)  
-             - Form Submit: Monitor form submission events and handlers
-             - FormData Creation: Monitor new FormData() constructor calls -->
+
+        <!-- Track Events Section -->
+        <div class="track-events-section">
+          <h4 class="track-events-header">
+            <span>Track Events</span>
+            <button class="track-events-toggle" type="button">▼</button>
+          </h4>
+          <div class="track-events-content" style="display: none;">
+            <div class="track-events-option">
+              <label>
+                <input type="checkbox" class="input-value-access" checked>
+                <span>Input Value Access</span>
+              </label>
+              <div class="track-events-description">Monitor property getters (value, nodeValue)</div>
+            </div>
+            <div class="track-events-option">
+              <label>
+                <input type="checkbox" class="input-events" checked>
+                <span>Input Events</span>
+              </label>
+              <div class="track-events-description">Monitor addEventListener calls (keydown, input, change)</div>
+            </div>
+            <div class="track-events-option">
+              <label>
+                <input type="checkbox" class="form-submit" checked>
+                <span>Form Submit</span>
+              </label>
+              <div class="track-events-description">Monitor form submission events and handlers</div>
+            </div>
+            <div class="track-events-option">
+              <label>
+                <input type="checkbox" class="form-data-creation" checked>
+                <span>FormData Creation</span>
+              </label>
+              <div class="track-events-description">Monitor new FormData() constructor calls</div>
+            </div>
+          </div>
+        </div>
              
         <!-- TODO: Advanced Features
              - Real-time event feed/log display
@@ -161,6 +186,9 @@ class HUD {
     
     // Filter section handlers
     this.setupFilterHandlers();
+
+    // Track Events section handlers
+    this.setupTrackEventsHandlers();
   }
 
   private setupFilterHandlers(): void {
@@ -181,6 +209,28 @@ class HUD {
     elementSelectorInput?.addEventListener('input', () => this.onFilterChange());
     attributeFiltersInput?.addEventListener('input', () => this.onFilterChange());
     stackKeywordFilterInput?.addEventListener('input', () => this.onFilterChange());
+  }
+
+  private setupTrackEventsHandlers(): void {
+    const trackEventsToggle = this.hudElement.querySelector('.track-events-toggle') as HTMLButtonElement;
+    const trackEventsContent = this.hudElement.querySelector('.track-events-content') as HTMLElement;
+    const inputValueAccessCheckbox = this.hudElement.querySelector('.input-value-access') as HTMLInputElement;
+    const inputEventsCheckbox = this.hudElement.querySelector('.input-events') as HTMLInputElement;
+    const formSubmitCheckbox = this.hudElement.querySelector('.form-submit') as HTMLInputElement;
+    const formDataCreationCheckbox = this.hudElement.querySelector('.form-data-creation') as HTMLInputElement;
+
+    // Toggle track events section visibility
+    trackEventsToggle?.addEventListener('click', () => {
+      const isVisible = trackEventsContent.style.display !== 'none';
+      trackEventsContent.style.display = isVisible ? 'none' : 'block';
+      trackEventsToggle.textContent = isVisible ? '▼' : '▲';
+    });
+
+    // Track Events checkbox change handlers
+    inputValueAccessCheckbox?.addEventListener('change', () => this.onTrackEventsChange());
+    inputEventsCheckbox?.addEventListener('change', () => this.onTrackEventsChange());
+    formSubmitCheckbox?.addEventListener('change', () => this.onTrackEventsChange());
+    formDataCreationCheckbox?.addEventListener('change', () => this.onTrackEventsChange());
   }
 
   private setupRecordingModeHandlers(): void {
@@ -226,6 +276,12 @@ class HUD {
             elementSelector: '',
             attributeFilters: '',
             stackKeywordFilter: ''
+          },
+          trackEvents: response.trackEvents || {
+            inputValueAccess: true,
+            inputEvents: true,
+            formSubmit: true,
+            formDataCreation: true
           }
         });
       }
@@ -297,6 +353,28 @@ class HUD {
     });
   }
 
+  private onTrackEventsChange(): void {
+    const inputValueAccessCheckbox = this.hudElement.querySelector('.input-value-access') as HTMLInputElement;
+    const inputEventsCheckbox = this.hudElement.querySelector('.input-events') as HTMLInputElement;
+    const formSubmitCheckbox = this.hudElement.querySelector('.form-submit') as HTMLInputElement;
+    const formDataCreationCheckbox = this.hudElement.querySelector('.form-data-creation') as HTMLInputElement;
+
+    const trackEvents: TrackEventsState = {
+      inputValueAccess: inputValueAccessCheckbox?.checked || false,
+      inputEvents: inputEventsCheckbox?.checked || false,
+      formSubmit: formSubmitCheckbox?.checked || false,
+      formDataCreation: formDataCreationCheckbox?.checked || false
+    };
+
+    this.updateState({ trackEvents });
+
+    // Send track events changes to background script
+    chrome.runtime.sendMessage({
+      type: 'SET_TRACK_EVENTS',
+      trackEvents: trackEvents
+    });
+  }
+
   private updateState(newState: Partial<HudState>): void {
     this.state = { ...this.state, ...newState };
     this.updateUI();
@@ -359,6 +437,25 @@ class HUD {
     }
     if (stackKeywordFilterInput) {
       stackKeywordFilterInput.value = this.state.filters.stackKeywordFilter;
+    }
+
+    // Update track events checkboxes
+    const inputValueAccessCheckbox = this.hudElement.querySelector('.input-value-access') as HTMLInputElement;
+    const inputEventsCheckbox = this.hudElement.querySelector('.input-events') as HTMLInputElement;
+    const formSubmitCheckbox = this.hudElement.querySelector('.form-submit') as HTMLInputElement;
+    const formDataCreationCheckbox = this.hudElement.querySelector('.form-data-creation') as HTMLInputElement;
+
+    if (inputValueAccessCheckbox) {
+      inputValueAccessCheckbox.checked = this.state.trackEvents.inputValueAccess;
+    }
+    if (inputEventsCheckbox) {
+      inputEventsCheckbox.checked = this.state.trackEvents.inputEvents;
+    }
+    if (formSubmitCheckbox) {
+      formSubmitCheckbox.checked = this.state.trackEvents.formSubmit;
+    }
+    if (formDataCreationCheckbox) {
+      formDataCreationCheckbox.checked = this.state.trackEvents.formDataCreation;
     }
 
     // Update theme
@@ -524,6 +621,7 @@ function resyncStateFromBackground(): void {
       window.postMessage({ type: 'SET_FILTERS',        filters: response.filters || { elementSelector: '', attributeFilters: '', stackKeywordFilter: '' } }, '*');
       window.postMessage({ type: 'SET_RECORDING_MODE', recordingMode: response.recordingMode || 'console' }, '*');
       window.postMessage({ type: 'SET_RECORDING_STATE', recording: !!response.recording }, '*');
+      window.postMessage({ type: 'SET_TRACK_EVENTS', trackEvents: response.trackEvents || { inputValueAccess: true, inputEvents: true, formSubmit: true, formDataCreation: true } }, '*');
     }, 0);
   });
 }
@@ -550,6 +648,12 @@ function setupControlForwarding(): void {
         window.postMessage({
           type: 'SET_FILTERS',
           filters: message.filters
+        }, '*');
+        break;
+      case 'SET_TRACK_EVENTS':
+        window.postMessage({
+          type: 'SET_TRACK_EVENTS',
+          trackEvents: message.trackEvents
         }, '*');
         break;
     }

@@ -1,0 +1,78 @@
+// Shared Type Definitions - Common interfaces used across content script, background script, and injected scripts
+// Consolidates type definitions to avoid duplication and ensure consistency
+
+export interface FilterOptions {
+  elementSelector: string;        // CSS selector (e.g., "#myInput, .password")
+  attributeFilters: string;       // name=value pairs (e.g., "name=password, type=email")
+  stackKeywordFilter: string;     // case-insensitive keyword (e.g., "analytics")
+}
+
+export interface TrackEventsState {
+  inputValueAccess: boolean;    // Property getter hooks (input.value, textarea.value)
+  inputEvents: boolean;         // Event listener hooks (addEventListener)
+  formSubmit: boolean;          // Form submission hooks (form.submit(), submit events)
+  formDataCreation: boolean;    // FormData constructor hooks (new FormData())
+}
+
+export interface EvidenceEvent {
+  actionId: string;
+  type: string;
+  start: number;
+  duration: number;
+  data: string;
+  target: { id: string };
+  stackTrace: string[];
+}
+
+// HUD and Content Script Types
+export interface HudState {
+  recording: boolean;
+  eventCount: number;
+  atCap: boolean;
+  recordingMode: 'console' | 'breakpoint';
+  filters: FilterOptions;
+  trackEvents: TrackEventsState;
+  theme: 'dark' | 'light';
+}
+
+// Background Script Types
+export interface TabData {
+  events: EvidenceEvent[];
+  recording: boolean;
+  recordingMode: 'console' | 'breakpoint';
+  domain: string;
+  createdAt: number;
+  filters: FilterOptions;
+  trackEvents: TrackEventsState;
+}
+
+export interface HudMessage {
+  type: 'HUD_MESSAGE' | 'HUD_UPDATE' | 'SET_RECORDING_MODE' | 'SET_RECORDING_STATE' | 'SET_FILTERS' | 'SET_TRACK_EVENTS';
+  level?: 'info' | 'warning' | 'success' | 'error';
+  message?: string;
+  recording?: boolean;
+  eventCount?: number;
+  atCap?: boolean;
+  recordingMode?: 'console' | 'breakpoint';
+  filters?: FilterOptions;
+  trackEvents?: TrackEventsState;
+}
+
+export interface BackgroundMessage {
+  type: 'EVIDENCE_EVENT' | 'TOGGLE_RECORDING' | 'GET_STATUS' | 'EXPORT_EVENTS' | 'CLEAR_EVENTS' | 'SET_RECORDING_MODE' | 'SET_FILTERS' | 'SET_TRACK_EVENTS';
+  event?: EvidenceEvent;
+  recordingMode?: 'console' | 'breakpoint';
+  filters?: FilterOptions;
+  trackEvents?: TrackEventsState;
+}
+
+export interface ExportData {
+  metadata: {
+    domain: string;
+    exportedAt: string;
+    eventCount: number;
+    recordingStarted: string;
+    autoExported: boolean;
+  };
+  events: EvidenceEvent[];
+}
