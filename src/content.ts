@@ -192,18 +192,22 @@ class HUD {
   }
 
   private setupFilterHandlers(): void {
+    const filterHeader = this.hudElement.querySelector('.filter-header') as HTMLElement;
     const filterToggle = this.hudElement.querySelector('.filter-toggle') as HTMLButtonElement;
     const filterContent = this.hudElement.querySelector('.filter-content') as HTMLElement;
     const elementSelectorInput = this.hudElement.querySelector('.element-selector') as HTMLInputElement;
     const attributeFiltersInput = this.hudElement.querySelector('.attribute-filters') as HTMLInputElement;
     const stackKeywordFilterInput = this.hudElement.querySelector('.stack-keyword-filter') as HTMLInputElement;
 
-    // Toggle filter section visibility
-    filterToggle?.addEventListener('click', () => {
+    // Function to toggle filter section visibility
+    const toggleFilter = () => {
       const isVisible = filterContent.style.display !== 'none';
       filterContent.style.display = isVisible ? 'none' : 'block';
       filterToggle.textContent = isVisible ? '▼' : '▲';
-    });
+    };
+
+    // Make entire header clickable
+    filterHeader?.addEventListener('click', toggleFilter);
 
     // Filter input change handlers
     elementSelectorInput?.addEventListener('input', () => this.onFilterChange());
@@ -212,6 +216,7 @@ class HUD {
   }
 
   private setupTrackEventsHandlers(): void {
+    const trackEventsHeader = this.hudElement.querySelector('.track-events-header') as HTMLElement;
     const trackEventsToggle = this.hudElement.querySelector('.track-events-toggle') as HTMLButtonElement;
     const trackEventsContent = this.hudElement.querySelector('.track-events-content') as HTMLElement;
     const inputValueAccessCheckbox = this.hudElement.querySelector('.input-value-access') as HTMLInputElement;
@@ -219,12 +224,15 @@ class HUD {
     const formSubmitCheckbox = this.hudElement.querySelector('.form-submit') as HTMLInputElement;
     const formDataCreationCheckbox = this.hudElement.querySelector('.form-data-creation') as HTMLInputElement;
 
-    // Toggle track events section visibility
-    trackEventsToggle?.addEventListener('click', () => {
+    // Function to toggle track events section visibility
+    const toggleTrackEvents = () => {
       const isVisible = trackEventsContent.style.display !== 'none';
       trackEventsContent.style.display = isVisible ? 'none' : 'block';
       trackEventsToggle.textContent = isVisible ? '▼' : '▲';
-    });
+    };
+
+    // Make entire header clickable
+    trackEventsHeader?.addEventListener('click', toggleTrackEvents);
 
     // Track Events checkbox change handlers
     inputValueAccessCheckbox?.addEventListener('change', () => this.onTrackEventsChange());
@@ -234,15 +242,19 @@ class HUD {
   }
 
   private setupRecordingModeHandlers(): void {
+    const recordingModeHeader = this.hudElement.querySelector('.recording-mode-header') as HTMLElement;
     const recordingModeToggle = this.hudElement.querySelector('.recording-mode-toggle') as HTMLButtonElement;
     const recordingModeContent = this.hudElement.querySelector('.recording-mode-content') as HTMLElement;
 
-    // Toggle recording mode section visibility
-    recordingModeToggle?.addEventListener('click', () => {
+    // Function to toggle recording mode section visibility
+    const toggleRecordingMode = () => {
       const isVisible = recordingModeContent.style.display !== 'none';
       recordingModeContent.style.display = isVisible ? 'none' : 'block';
       recordingModeToggle.textContent = isVisible ? '▼' : '▲';
-    });
+    };
+
+    // Make entire header clickable
+    recordingModeHeader?.addEventListener('click', toggleRecordingMode);
   }
 
   private setupMessageListener(): void {
