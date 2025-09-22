@@ -279,6 +279,7 @@ class HUD {
   private requestStatus(): void {
     chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
       if (response) {
+        console.debug('[HUD] Received status from background:', response);
         this.updateState({
           recording: response.recording,
           eventCount: response.eventCount,
@@ -332,16 +333,19 @@ class HUD {
   }
 
   private onRecordingModeToggle(): void {
+    console.debug('[HUD] Recording mode toggle clicked');
     const toggleSwitch = this.hudElement.querySelector('.toggle-switch') as HTMLElement;
-    const currentMode = toggleSwitch.getAttribute('data-mode') as 'console' | 'breakpoint';
+    const currentMode = toggleSwitch.getAttribute('data-mode') || 'console';
     const newMode = currentMode === 'console' ? 'breakpoint' : 'console';
-    
+
+    console.debug(`[HUD] Toggling from ${currentMode} to ${newMode}`);
     this.updateState({ recordingMode: newMode });
-    
+
     // Send mode change to background script
-    chrome.runtime.sendMessage({ 
-      type: 'SET_RECORDING_MODE', 
-      recordingMode: newMode 
+    console.debug('[HUD] Sending SET_RECORDING_MODE message to background');
+    chrome.runtime.sendMessage({
+      type: 'SET_RECORDING_MODE',
+      recordingMode: newMode
     });
   }
 

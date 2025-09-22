@@ -15,12 +15,15 @@ import {
 
 class EvidenceManager {
   private tabData: Map<number, TabData>;
+  private tabStorageKeys: Map<number, string>; // Track storage keys per tab
   private readonly EVENT_CAP = 2000; // Max events per tab before showing warning
 
   constructor() {
     this.tabData = new Map();
+    this.tabStorageKeys = new Map();
     this.setupMessageHandlers();
     this.setupTabHandlers();
+    this.cleanupOldStates();
   }
 
   private setupMessageHandlers(): void {
@@ -35,23 +38,30 @@ class EvidenceManager {
             this.addEvent(tabId, message.event, sender.tab.url);
           }
           break;
-          
+
         case 'TOGGLE_RECORDING':
           if (sender.tab?.url) {
-            this.toggleRecording(tabId, sender.tab.url);
-            sendResponse({ recording: this.isRecording(tabId) });
+            this.toggleRecording(tabId, sender.tab.url).then(() => {
+              sendResponse({ recording: this.isRecording(tabId) });
+            });
+            return true; // Keep message channel open for async response
           }
           break;
           
         case 'GET_STATUS':
-          sendResponse({
-            recording: this.isRecording(tabId),
-            eventCount: this.getEventCount(tabId),
-            atCap: this.isAtCap(tabId),
-            recordingMode: this.getRecordingMode(tabId),
-            filters: this.getFilters(tabId),
-            trackEvents: this.getTrackEvents(tabId)
-          });
+          if (sender.tab?.url) {
+            this.initializeTab(tabId, sender.tab.url).then(() => {
+              sendResponse({
+                recording: this.isRecording(tabId),
+                eventCount: this.getEventCount(tabId),
+                atCap: this.isAtCap(tabId),
+                recordingMode: this.getRecordingMode(tabId),
+                filters: this.getFilters(tabId),
+                trackEvents: this.getTrackEvents(tabId)
+              });
+            });
+            return true; // Keep message channel open for async response
+          }
           break;
           
         case 'EXPORT_EVENTS':
@@ -60,28 +70,36 @@ class EvidenceManager {
           break;
           
         case 'CLEAR_EVENTS':
-          this.clearEvents(tabId);
-          sendResponse({ cleared: true });
+          this.clearEvents(tabId).then(() => {
+            sendResponse({ cleared: true });
+          });
+          return true; // Keep message channel open for async response
           break;
           
         case 'SET_RECORDING_MODE':
           if (message.recordingMode) {
-            this.setRecordingMode(tabId, message.recordingMode);
-            sendResponse({ recordingMode: message.recordingMode });
+            this.setRecordingMode(tabId, message.recordingMode).then(() => {
+              sendResponse({ recordingMode: message.recordingMode });
+            });
+            return true; // Keep message channel open for async response
           }
           break;
           
         case 'SET_FILTERS':
           if (message.filters && sender.tab?.url) {
-            this.setFilters(tabId, message.filters, sender.tab.url);
-            sendResponse({ filters: message.filters });
+            this.setFilters(tabId, message.filters, sender.tab.url).then(() => {
+              sendResponse({ filters: message.filters });
+            });
+            return true; // Keep message channel open for async response
           }
           break;
 
         case 'SET_TRACK_EVENTS':
           if (message.trackEvents && sender.tab?.url) {
-            this.setTrackEvents(tabId, message.trackEvents, sender.tab.url);
-            sendResponse({ trackEvents: message.trackEvents });
+            this.setTrackEvents(tabId, message.trackEvents, sender.tab.url).then(() => {
+              sendResponse({ trackEvents: message.trackEvents });
+            });
+            return true; // Keep message channel open for async response
           }
           break;
       }
@@ -95,37 +113,59 @@ class EvidenceManager {
         console.log(`Tab ${tabId} closed with recording enabled - auto-exporting`);
         this.exportEvents(tabId, true); // true = auto-export
       }
-      // Clean up tab data
+
+      // Clean up tab data and storage key
       this.tabData.delete(tabId);
+      this.tabStorageKeys.delete(tabId);
+      console.debug(`[Background] Cleaned up tab ${tabId} data and storage key`);
     });
   }
 
-  private initializeTab(tabId: number, url: string): void {
+  private async initializeTab(tabId: number, url: string): Promise<void> {
     if (!this.tabData.has(tabId)) {
       const domain = new URL(url).hostname;
-      this.tabData.set(tabId, {
+
+      // Try to load existing state for this domain
+      const savedState = await this.loadTabState(domain);
+
+      // Use existing storage key for this tab, or generate new one
+      let storageKey = this.tabStorageKeys.get(tabId);
+      if (!storageKey) {
+        storageKey = this.generateStorageKey(domain);
+        this.tabStorageKeys.set(tabId, storageKey);
+      }
+
+      // Create tab data with saved state or defaults
+      const tabData: TabData = {
         events: [],
-        recording: false, // Start disabled by default
-        recordingMode: 'console', // Default to console logging
+        recording: savedState?.recording ?? false, // Start disabled by default
+        recordingMode: savedState?.recordingMode ?? 'console', // Default to console logging
         domain: domain,
         createdAt: Date.now(),
-        filters: {
+        filters: savedState?.filters ?? {
           elementSelector: '',
           attributeFilters: '',
           stackKeywordFilter: ''
         },
-        trackEvents: {
+        trackEvents: savedState?.trackEvents ?? {
           inputValueAccess: true,
           inputEvents: true,
           formSubmit: true,
           formDataCreation: true
         }
-      });
+      };
+
+      this.tabData.set(tabId, tabData);
+
+      // Save the initial state (with new storage key)
+      await this.saveTabState(tabId);
+
+      console.debug(`[Background] Initialized tab ${tabId} for domain ${domain}${savedState ? ' with saved state' : ' with defaults'}`);
     }
   }
 
-  private addEvent(tabId: number, event: EvidenceEvent, url: string): void {
-    this.initializeTab(tabId, url);
+  private async addEvent(tabId: number, event: EvidenceEvent, url: string): Promise<void> {
+    await this.initializeTab(tabId, url);
     const tabInfo = this.tabData.get(tabId)!;
     
     // Only add if recording is enabled for this tab
@@ -165,8 +205,8 @@ class EvidenceManager {
     });
   }
 
-  private toggleRecording(tabId: number, url: string): void {
-    this.initializeTab(tabId, url);
+  private async toggleRecording(tabId: number, url: string): Promise<void> {
+    await this.initializeTab(tabId, url);
     const tabInfo = this.tabData.get(tabId)!;
     tabInfo.recording = !tabInfo.recording;
     
@@ -201,6 +241,9 @@ class EvidenceManager {
       type: 'SET_RECORDING_STATE',
       recording: tabInfo.recording
     });
+
+    // Save state after recording toggle
+    await this.saveTabState(tabId);
   }
 
   private isRecording(tabId: number): boolean {
@@ -219,19 +262,20 @@ class EvidenceManager {
     return this.tabData.get(tabId)?.recordingMode || 'console';
   }
 
-  private setRecordingMode(tabId: number, mode: 'console' | 'breakpoint'): void {
+  private async setRecordingMode(tabId: number, mode: 'console' | 'breakpoint'): Promise<void> {
     const tabInfo = this.tabData.get(tabId);
     if (tabInfo) {
       tabInfo.recordingMode = mode;
       console.debug(`[Background] Recording mode set to ${mode} for tab ${tabId}`);
-      
-      // If currently recording, send mode update to injected script
-      if (tabInfo.recording) {
-        this.sendToTab(tabId, {
-          type: 'SET_RECORDING_MODE',
-          recordingMode: mode
-        });
-      }
+
+      // Always send mode update to injected script (not just when recording)
+      this.sendToTab(tabId, {
+        type: 'SET_RECORDING_MODE',
+        recordingMode: mode
+      });
+
+      // Save state after mode change
+      await this.saveTabState(tabId);
     }
   }
 
@@ -243,8 +287,8 @@ class EvidenceManager {
     };
   }
 
-  private setFilters(tabId: number, filters: FilterOptions, url: string): void {
-    this.initializeTab(tabId, url);
+  private async setFilters(tabId: number, filters: FilterOptions, url: string): Promise<void> {
+    await this.initializeTab(tabId, url);
     const tabInfo = this.tabData.get(tabId);
     if (tabInfo) {
       tabInfo.filters = filters;
@@ -255,6 +299,9 @@ class EvidenceManager {
         type: 'SET_FILTERS',
         filters: filters
       });
+
+      // Save state after filter change
+      await this.saveTabState(tabId);
     }
   }
 
@@ -267,8 +314,8 @@ class EvidenceManager {
     };
   }
 
-  private setTrackEvents(tabId: number, trackEvents: TrackEventsState, url: string): void {
-    this.initializeTab(tabId, url);
+  private async setTrackEvents(tabId: number, trackEvents: TrackEventsState, url: string): Promise<void> {
+    await this.initializeTab(tabId, url);
     const tabInfo = this.tabData.get(tabId);
     if (tabInfo) {
       tabInfo.trackEvents = trackEvents;
@@ -279,26 +326,32 @@ class EvidenceManager {
         type: 'SET_TRACK_EVENTS',
         trackEvents: trackEvents
       });
+
+      // Save state after track events change
+      await this.saveTabState(tabId);
     }
   }
 
-  private clearEvents(tabId: number): void {
+  private async clearEvents(tabId: number): Promise<void> {
     const tabInfo = this.tabData.get(tabId);
     if (tabInfo) {
       tabInfo.events = [];
-      
+
       // Send HUD update to refresh button states and event count
       this.sendToTab(tabId, {
         type: 'HUD_UPDATE',
         eventCount: 0,
         atCap: false
       });
-      
+
       this.sendToTab(tabId, {
         type: 'HUD_MESSAGE',
         level: 'info',
         message: 'Events cleared'
       });
+
+      // Save state after clearing events
+      await this.saveTabState(tabId);
     }
   }
 
@@ -351,6 +404,77 @@ class EvidenceManager {
         });
       }
     });
+  }
+
+  // ============================================================================
+  // STATE PERSISTENCE METHODS
+  // ============================================================================
+
+  private generateStorageKey(domain: string): string {
+    return `tab_${domain}`;
+  }
+
+  private async saveTabState(tabId: number): Promise<void> {
+    const tabInfo = this.tabData.get(tabId);
+    const storageKey = this.tabStorageKeys.get(tabId);
+
+    if (!tabInfo || !storageKey) return;
+
+    try {
+      const stateToSave = {
+        recording: tabInfo.recording,
+        recordingMode: tabInfo.recordingMode,
+        filters: tabInfo.filters,
+        trackEvents: tabInfo.trackEvents,
+        domain: tabInfo.domain,
+        lastUpdated: Date.now()
+      };
+
+      await chrome.storage.local.set({ [storageKey]: stateToSave });
+      console.debug(`[Background] Saved state for tab ${tabId} with key ${storageKey}:`, stateToSave);
+    } catch (error) {
+      console.warn(`[Background] Failed to save state for tab ${tabId}:`, error);
+    }
+  }
+
+  private async loadTabState(domain: string): Promise<Partial<TabData> | null> {
+    try {
+      const storageKey = `tab_${domain}`;
+      const storage = await chrome.storage.local.get(storageKey);
+      const state = storage[storageKey];
+
+      if (state) {
+        console.debug(`[Background] Loaded state for domain ${domain}:`, state);
+        return state;
+      }
+      return null;
+    } catch (error) {
+      console.warn(`[Background] Failed to load state for domain ${domain}:`, error);
+      return null;
+    }
+  }
+
+  private async cleanupOldStates(): Promise<void> {
+    try {
+      const storage = await chrome.storage.local.get();
+      const keys = Object.keys(storage);
+      const now = Date.now();
+      const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+
+      const keysToRemove = keys
+        .filter(key => key.startsWith('tab_'))
+        .filter(key => {
+          const state = storage[key];
+          return state && state.lastUpdated && (now - state.lastUpdated) > maxAge;
+        });
+
+      if (keysToRemove.length > 0) {
+        await chrome.storage.local.remove(keysToRemove);
+        console.debug(`[Background] Cleaned up ${keysToRemove.length} old state entries`);
+      }
+    } catch (error) {
+      console.warn('[Background] Failed to cleanup old states:', error);
+    }
   }
 
   private sendToTab(tabId: number, message: HudMessage): void {

@@ -175,7 +175,7 @@ export class PropertyGetterHooks {
 
           // Breakpoint if recording is active AND in breakpoint mode AND filters pass
           if (shouldProceed && recordingModeHandler.isCurrentlyRecording() && recordingModeHandler.getMode() === 'breakpoint') {
-            console.debug(`🛑 Breakpoint: Property access ${propertyName} on`, this);
+            // console.debug(`🛑 Breakpoint: Property access ${propertyName} on`, this);
             debugger; // eslint-disable-line no-debugger
           }
 
