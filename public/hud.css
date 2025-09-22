@@ -102,6 +102,34 @@
     background: var(--section-bg-hover);
 }
 
+/* Header Controls Layout */
+
+#evidence-hud-overlay .hud-header-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+#evidence-hud-overlay .minimize-toggle {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+#evidence-hud-overlay .minimize-toggle:hover {
+    background: var(--section-bg-hover);
+}
+
 
 /* Content Container */
 
@@ -513,4 +541,62 @@
     color: var(--text-secondary);
     font-size: 12px;
     font-weight: bold;
+}
+
+/* Minimized Circle */
+
+#evidence-hud-overlay .hud-minimized {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#evidence-hud-overlay .hud-minimized-circle {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: black;
+    border: 3px solid black;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px var(--hud-shadow);
+    position: relative;
+    user-select: none;
+}
+
+#evidence-hud-overlay .hud-minimized-circle:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px var(--hud-shadow);
+}
+
+#evidence-hud-overlay .hud-minimized-circle:active {
+    transform: scale(0.95);
+}
+
+#evidence-hud-overlay .hud-minimized-inner {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    transition: all 0.3s ease;
+}
+
+/* Light theme adjustments for minimized circle */
+#evidence-hud-overlay[data-theme="light"] .hud-minimized-circle {
+    background: white;
+    border-color: white;
+}
+
+/* When minimized, adjust the HUD container size */
+#evidence-hud-overlay .hud-minimized {
+    width: 50px !important;
+    height: 50px !important;
 }

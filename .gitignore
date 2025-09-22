@@ -6,3 +6,4 @@ dist/
 *.log
 .history
 export_data/
+logs/
