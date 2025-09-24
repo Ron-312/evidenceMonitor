@@ -33,6 +33,7 @@ export interface HudState {
   filters: FilterOptions;
   trackEvents: TrackEventsState;
   theme: 'dark' | 'light';
+  minimized: boolean;
 }
 
 // Background Script Types
@@ -73,6 +74,11 @@ export interface ExportData {
     eventCount: number;
     recordingStarted: string;
     autoExported: boolean;
+    deduplication: {
+      originalCount: number;
+      deduplicatedCount: number;
+      duplicatesRemoved: number;
+    };
   };
   events: EvidenceEvent[];
 }

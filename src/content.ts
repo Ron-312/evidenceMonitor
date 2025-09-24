@@ -18,24 +18,40 @@ class HUD {
       formSubmit: true,
       formDataCreation: true
     },
-    theme: 'dark'
+    theme: 'dark',
+    minimized: false
   };
 
   constructor() {
-    // Load saved theme preference
+    console.debug('[HUD] 🎯 HUD constructor called');
+
+    // Check if HUD already exists
+    const existingHUD = document.getElementById('evidence-hud-overlay');
+    if (existingHUD) {
+      console.warn('[HUD] ⚠️ HUD element already exists during constructor! This might cause issues.');
+    }
+
+    // Load saved preferences
     try {
       const savedTheme = localStorage.getItem('hud-theme');
       if (savedTheme === 'light' || savedTheme === 'dark') {
         this.state.theme = savedTheme;
       }
+
+      const savedMinimized = localStorage.getItem('hud-minimized');
+      if (savedMinimized === 'true' || savedMinimized === 'false') {
+        this.state.minimized = savedMinimized === 'true';
+      }
     } catch (error) {
-      console.warn('[HUD] Failed to load theme preference:', error);
+      console.warn('[HUD] Failed to load preferences:', error);
     }
 
     this.hudElement = this.createHUD();
     this.attachHUD();
     this.setupMessageListener();
     this.requestStatus();
+
+    console.debug('[HUD] ✅ HUD constructor complete, element attached to DOM');
   }
 
   private createHUD(): HTMLDivElement {
@@ -44,7 +60,10 @@ class HUD {
     hud.innerHTML = `
       <div class="hud-header">
         <h3>Input Monitoring</h3>
-        <button class="theme-toggle" title="Toggle light/dark theme">🌙</button>
+        <div class="hud-header-controls">
+          <button class="minimize-toggle" title="Minimize HUD">−</button>
+          <button class="theme-toggle" title="Toggle light/dark theme">🌙</button>
+        </div>
       </div>
       <div class="hud-content">
         
@@ -152,6 +171,13 @@ class HUD {
              - Export format options (JSON, CSV)
              - Session management (save/load configurations) -->
       </div>
+
+      <!-- Minimized Circle -->
+      <div class="hud-minimized" style="display: none;">
+        <div class="hud-minimized-circle">
+          <div class="hud-minimized-inner"></div>
+        </div>
+      </div>
     `;
     return hud;
   }
@@ -168,6 +194,7 @@ class HUD {
     const exportBtn = this.hudElement.querySelector('.export-data') as HTMLButtonElement;
     const clearBtn = this.hudElement.querySelector('.clear-data') as HTMLButtonElement;
     const themeToggle = this.hudElement.querySelector('.theme-toggle') as HTMLButtonElement;
+    const minimizeToggle = this.hudElement.querySelector('.minimize-toggle') as HTMLButtonElement;
     const toggleSwitch = this.hudElement.querySelector('.toggle-switch') as HTMLElement;
 
     startBtn?.addEventListener('click', () => this.toggleRecording());
@@ -180,7 +207,10 @@ class HUD {
 
     // Theme toggle handler
     themeToggle?.addEventListener('click', () => this.onThemeToggle());
-    
+
+    // Minimize toggle handler
+    minimizeToggle?.addEventListener('click', () => this.onMinimizeToggle());
+
     // Recording mode section handlers
     this.setupRecordingModeHandlers();
     
@@ -189,6 +219,9 @@ class HUD {
 
     // Track Events section handlers
     this.setupTrackEventsHandlers();
+
+    // Minimized circle handlers
+    this.setupMinimizedHandlers();
   }
 
   private setupFilterHandlers(): void {
@@ -241,6 +274,76 @@ class HUD {
     formDataCreationCheckbox?.addEventListener('change', () => this.onTrackEventsChange());
   }
 
+  private setupMinimizedHandlers(): void {
+    const minimizedCircle = this.hudElement.querySelector('.hud-minimized-circle') as HTMLElement;
+
+    if (!minimizedCircle) return;
+
+    let isDragging = false;
+    let hasMoved = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+    const DRAG_THRESHOLD = 5; // pixels - minimum movement to consider it a drag
+
+    minimizedCircle.addEventListener('mousedown', (e: MouseEvent) => {
+      isDragging = true;
+      hasMoved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+
+      const hudRect = this.hudElement.getBoundingClientRect();
+      startLeft = hudRect.left;
+      startTop = hudRect.top;
+
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    document.addEventListener('mousemove', (e: MouseEvent) => {
+      if (!isDragging) return;
+
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+
+      // Check if movement exceeds threshold
+      if (!hasMoved && (Math.abs(deltaX) > DRAG_THRESHOLD || Math.abs(deltaY) > DRAG_THRESHOLD)) {
+        hasMoved = true;
+      }
+
+      if (hasMoved) {
+        let newLeft = startLeft + deltaX;
+        let newTop = startTop + deltaY;
+
+        // Keep minimized circle within viewport bounds
+        const circleSize = 50; // Size of the minimized circle
+        const maxLeft = window.innerWidth - circleSize;
+        const maxTop = window.innerHeight - circleSize;
+
+        newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+        newTop = Math.max(0, Math.min(newTop, maxTop));
+
+        this.hudElement.style.left = newLeft + 'px';
+        this.hudElement.style.top = newTop + 'px';
+        this.hudElement.style.right = 'auto';
+      }
+    });
+
+    document.addEventListener('mouseup', (e: MouseEvent) => {
+      if (isDragging) {
+        isDragging = false;
+
+        // If no significant movement occurred, treat it as a click to restore
+        if (!hasMoved) {
+          this.onMinimizeToggle();
+        }
+
+        hasMoved = false;
+      }
+    });
+  }
+
   private setupRecordingModeHandlers(): void {
     const recordingModeHeader = this.hudElement.querySelector('.recording-mode-header') as HTMLElement;
     const recordingModeToggle = this.hudElement.querySelector('.recording-mode-toggle') as HTMLButtonElement;
@@ -277,14 +380,27 @@ class HUD {
 
 
   private requestStatus(): void {
+    console.debug('[HUD] Requesting status from background...');
+
     chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
+      console.debug('[HUD] Received status response from background:', response);
+
       if (response) {
-        console.debug('[HUD] Received status from background:', response);
-        this.updateState({
+        // Check for missing recordingMode and handle explicitly
+        let recordingMode = response.recordingMode;
+        if (!recordingMode) {
+          console.error('[HUD] ❌ CRITICAL: Background returned no recordingMode!', {
+            fullResponse: response,
+            resettingToConsole: true
+          });
+          recordingMode = 'console';
+        }
+
+        const stateUpdate = {
           recording: response.recording,
           eventCount: response.eventCount,
           atCap: response.atCap,
-          recordingMode: response.recordingMode || 'console',
+          recordingMode: recordingMode,
           filters: response.filters || {
             elementSelector: '',
             attributeFilters: '',
@@ -296,7 +412,17 @@ class HUD {
             formSubmit: true,
             formDataCreation: true
           }
+        };
+
+        console.debug('[HUD] About to update state:', {
+          originalRecordingMode: response.recordingMode,
+          finalRecordingMode: stateUpdate.recordingMode,
+          hadToReset: !response.recordingMode
         });
+
+        this.updateState(stateUpdate);
+      } else {
+        console.warn('[HUD] No response received from background script');
       }
     });
   }
@@ -323,13 +449,65 @@ class HUD {
   private onThemeToggle(): void {
     const newTheme = this.state.theme === 'dark' ? 'light' : 'dark';
     this.updateState({ theme: newTheme });
-    
+
     // Save theme preference to localStorage
     try {
       localStorage.setItem('hud-theme', newTheme);
     } catch (error) {
       console.warn('[HUD] Failed to save theme preference:', error);
     }
+  }
+
+  private onMinimizeToggle(): void {
+    const newMinimized = !this.state.minimized;
+
+    // If we're restoring from minimized state, position HUD where minimize button was
+    if (this.state.minimized && !newMinimized) {
+      this.positionHUDFromMinimized();
+    }
+
+    this.updateState({ minimized: newMinimized });
+
+    // Save minimize state to localStorage
+    try {
+      localStorage.setItem('hud-minimized', newMinimized.toString());
+    } catch (error) {
+      console.warn('[HUD] Failed to save minimize preference:', error);
+    }
+  }
+
+  private positionAtBottomRight(): void {
+    const rightMargin = 40; // Distance from right edge (moved left)
+    const bottomMargin = 20; // Distance from bottom edge
+    const circleSize = 50;
+
+    const rightPos = window.innerWidth - circleSize - rightMargin;
+    const bottomPos = window.innerHeight - circleSize - bottomMargin;
+
+    this.hudElement.style.left = rightPos + 'px';
+    this.hudElement.style.top = bottomPos + 'px';
+    this.hudElement.style.right = 'auto';
+    this.hudElement.style.bottom = 'auto';
+  }
+
+  private positionHUDFromMinimized(): void {
+    // Position HUD at the top of the page
+    const hudWidth = 350;
+    const topMargin = 20; // Distance from top edge
+    const rightMargin = 20; // Distance from right edge
+
+    // Position at top-right corner
+    const rightPos = window.innerWidth - hudWidth - rightMargin;
+    const topPos = topMargin;
+
+    // Ensure it stays within viewport bounds
+    const safeX = Math.max(0, Math.min(rightPos, window.innerWidth - hudWidth));
+    const safeY = Math.max(0, topPos);
+
+    this.hudElement.style.left = safeX + 'px';
+    this.hudElement.style.top = safeY + 'px';
+    this.hudElement.style.right = 'auto';
+    this.hudElement.style.bottom = 'auto';
   }
 
   private onRecordingModeToggle(): void {
@@ -397,6 +575,44 @@ class HUD {
   }
 
   private updateUI(): void {
+    const hudContent = this.hudElement.querySelector('.hud-content') as HTMLElement;
+    const hudHeader = this.hudElement.querySelector('.hud-header') as HTMLElement;
+    const hudMinimized = this.hudElement.querySelector('.hud-minimized') as HTMLElement;
+    const minimizeToggle = this.hudElement.querySelector('.minimize-toggle') as HTMLButtonElement;
+
+    // Handle minimize/restore UI state
+    if (this.state.minimized) {
+      hudContent.style.display = 'none';
+      hudHeader.style.display = 'none';
+      hudMinimized.style.display = 'block';
+      minimizeToggle.textContent = '□';
+      minimizeToggle.title = 'Restore HUD';
+      // Adjust container size for minimized state
+      this.hudElement.style.width = '50px';
+      this.hudElement.style.height = '50px';
+      this.hudElement.style.borderRadius = '50%';
+      this.hudElement.style.overflow = 'visible';
+      this.hudElement.style.background = 'transparent';
+      this.hudElement.style.border = 'none';
+      this.hudElement.style.boxShadow = 'none';
+      // Position at bottom-right
+      this.positionAtBottomRight();
+    } else {
+      hudContent.style.display = 'block';
+      hudHeader.style.display = 'flex';
+      hudMinimized.style.display = 'none';
+      minimizeToggle.textContent = '−';
+      minimizeToggle.title = 'Minimize HUD';
+      // Restore container size for full state
+      this.hudElement.style.width = '350px';
+      this.hudElement.style.height = 'auto';
+      this.hudElement.style.borderRadius = '8px';
+      this.hudElement.style.overflow = 'hidden';
+      this.hudElement.style.background = '';
+      this.hudElement.style.border = '';
+      this.hudElement.style.boxShadow = '';
+    }
+
     const recordingStatus = this.hudElement.querySelector('.recording-status') as HTMLElement;
     const eventCount = this.hudElement.querySelector('.event-count') as HTMLElement;
     const startBtn = this.hudElement.querySelector('.start-recording') as HTMLButtonElement;
@@ -630,16 +846,106 @@ function setupInjectedScriptBridge(): void {
 }
 
 function resyncStateFromBackground(): void {
+  console.debug('[ContentScript] Starting state resync from background...');
+
   chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
-    if (!response) return;
-    // Defer slightly so injected main’s message listener is definitely installed
+    console.debug('[ContentScript] Received GET_STATUS response:', response);
+
+    if (!response) {
+      console.warn('[ContentScript] No response from background script during resync');
+      return;
+    }
+
+    // Log what we're about to send to injected script
+    console.debug('[ContentScript] About to send to injected script:', {
+      filters: response.filters,
+      recordingMode: response.recordingMode,
+      recording: response.recording,
+      trackEvents: response.trackEvents,
+      fallbackRecordingMode: response.recordingMode || 'console'
+    });
+
+    // Defer slightly so injected main's message listener is definitely installed
     setTimeout(() => {
-      window.postMessage({ type: 'SET_FILTERS',        filters: response.filters || { elementSelector: '', attributeFilters: '', stackKeywordFilter: '' } }, '*');
-      window.postMessage({ type: 'SET_RECORDING_MODE', recordingMode: response.recordingMode || 'console' }, '*');
+      // Send filters (safe to use defaults here)
+      window.postMessage({ type: 'SET_FILTERS', filters: response.filters || { elementSelector: '', attributeFilters: '', stackKeywordFilter: '' } }, '*');
+
+      // Recording mode - NO FALLBACK, make issues visible
+      if (response.recordingMode) {
+        console.debug(`[ContentScript] Sending valid recording mode: ${response.recordingMode}`);
+        window.postMessage({ type: 'SET_RECORDING_MODE', recordingMode: response.recordingMode }, '*');
+      } else {
+        console.error('[ContentScript] ❌ CRITICAL: Background returned no recordingMode!', {
+          fullResponse: response,
+          backgroundMightBeCorrupted: true
+        });
+        // Force reset to console mode and log the issue
+        console.warn('[ContentScript] Force-resetting to console mode due to missing recordingMode');
+        window.postMessage({ type: 'SET_RECORDING_MODE', recordingMode: 'console' }, '*');
+      }
+
+      // Recording state
       window.postMessage({ type: 'SET_RECORDING_STATE', recording: !!response.recording }, '*');
+
+      // Track events (safe to use defaults here)
       window.postMessage({ type: 'SET_TRACK_EVENTS', trackEvents: response.trackEvents || { inputValueAccess: true, inputEvents: true, formSubmit: true, formDataCreation: true } }, '*');
+
+      console.debug('[ContentScript] State messages sent to injected script');
+
+      // Validate state sync after a longer delay to allow HUD to finish updating
+      setTimeout(() => validateStateSync(), 500);
     }, 0);
   });
+}
+
+/**
+ * Validates that HUD and injected script have synchronized state
+ */
+function validateStateSync(): void {
+  // Get current HUD state
+  const hudElement = document.getElementById('evidence-hud-overlay');
+  const toggleSwitch = hudElement?.querySelector('.toggle-switch') as HTMLElement;
+  const hudRecordingMode = toggleSwitch?.getAttribute('data-mode') || 'unknown';
+
+  console.debug('[ContentScript] Reading HUD state for validation:', {
+    hudElementExists: !!hudElement,
+    toggleSwitchExists: !!toggleSwitch,
+    dataMode: toggleSwitch?.getAttribute('data-mode'),
+    resolvedMode: hudRecordingMode
+  });
+
+  // Request injected script state via postMessage
+  window.postMessage({ type: 'GET_INJECTED_STATE' }, '*');
+
+  // Set up one-time listener for response
+  const stateValidator = (event: MessageEvent) => {
+    if (event.source !== window || event.data.type !== 'INJECTED_STATE_RESPONSE') return;
+
+    const injectedState = event.data.state;
+    console.debug('[ContentScript] State validation:', {
+      hudRecordingMode,
+      injectedRecordingMode: injectedState.recordingMode,
+      injectedRecording: injectedState.recording,
+      inSync: hudRecordingMode === injectedState.recordingMode
+    });
+
+    if (hudRecordingMode !== injectedState.recordingMode) {
+      console.error('[ContentScript] ❌ STATE SYNC ISSUE DETECTED!', {
+        hudMode: hudRecordingMode,
+        injectedMode: injectedState.recordingMode,
+        problem: 'HUD and injected script have different recording modes'
+      });
+    } else {
+      console.debug('[ContentScript] ✅ State is synchronized');
+    }
+
+    window.removeEventListener('message', stateValidator);
+  };
+
+  window.addEventListener('message', stateValidator);
+
+  // Timeout cleanup
+  setTimeout(() => window.removeEventListener('message', stateValidator), 1000);
 }
 
 /**
@@ -680,29 +986,46 @@ function setupControlForwarding(): void {
 // INITIALIZATION
 // ============================================================================
 
+// Track if we've already initialized to prevent multiple HUD instances
+let isInitialized = false;
+let hudInstance: HUD | null = null;
+
 // Initialize everything when DOM is ready
 async function initialize(): Promise<void> {
+  if (isInitialized) {
+    console.warn('[ContentScript] ⚠️ initialize() called multiple times! Skipping to prevent duplicate HUD.');
+    return;
+  }
+
   console.debug('[ContentScript] Initializing Reflectiz content script...');
-  
+
   try {
     // Inject surveillance script with complete config atomically - no race conditions
     await injectSurveillanceScript();
-    
+
     // Set up communication bridge for evidence collection
     setupInjectedScriptBridge();
 
     // Forward control messages for runtime config changes only
     setupControlForwarding();
-    
+
     // Only initialize HUD in the top frame (not in iframes)
     if (window === window.top) {
-      new HUD();
-      console.debug('[ContentScript] HUD initialized in main frame');
+      // Check if HUD already exists in DOM
+      const existingHUD = document.getElementById('evidence-hud-overlay');
+      if (existingHUD) {
+        console.warn('[ContentScript] ⚠️ HUD element already exists in DOM! Removing old one.');
+        existingHUD.remove();
+      }
+
+      hudInstance = new HUD();
+      console.debug('[ContentScript] ✅ HUD initialized in main frame');
     } else {
       console.debug('[ContentScript] Skipping HUD in iframe');
     }
-    
-    console.debug('[ContentScript] Content script initialization complete');
+
+    isInitialized = true;
+    console.debug('[ContentScript] ✅ Content script initialization complete');
   } catch (error) {
     console.error('[ContentScript] Failed to initialize:', error);
     // Continue anyway - some functionality might still work

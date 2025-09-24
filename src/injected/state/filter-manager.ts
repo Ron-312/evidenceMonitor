@@ -1,11 +1,7 @@
 // Filter Manager - Handles element and stack trace filtering logic
 // Determines if surveillance events should be captured based on user-defined filters
 
-export interface FilterOptions {
-  elementSelector: string;        // CSS selector (e.g., "#myInput, .password")
-  attributeFilters: string;       // name=value pairs (e.g., "name=password, type=email") 
-  stackKeywordFilter: string;     // case-insensitive keyword (e.g., "analytics")
-}
+import { FilterOptions } from '../../shared-types';
 
 interface AttributeFilter {
   name: string;

@@ -16,7 +16,7 @@ import {
 class EvidenceManager {
   private tabData: Map<number, TabData>;
   private tabStorageKeys: Map<number, string>; // Track storage keys per tab
-  private readonly EVENT_CAP = 2000; // Max events per tab before showing warning
+  private readonly EVENT_CAP = 5000; // Max events per tab before showing warning
 
   constructor() {
     this.tabData = new Map();
@@ -51,13 +51,36 @@ class EvidenceManager {
         case 'GET_STATUS':
           if (sender.tab?.url) {
             this.initializeTab(tabId, sender.tab.url).then(() => {
-              sendResponse({
+              const statusResponse = {
                 recording: this.isRecording(tabId),
                 eventCount: this.getEventCount(tabId),
                 atCap: this.isAtCap(tabId),
                 recordingMode: this.getRecordingMode(tabId),
                 filters: this.getFilters(tabId),
                 trackEvents: this.getTrackEvents(tabId)
+              };
+
+              // Validate that we have a proper recordingMode before sending
+              if (!statusResponse.recordingMode) {
+                console.error(`[Background] ❌ CRITICAL: No recordingMode for tab ${tabId}! Forcing console mode.`, {
+                  tabExists: this.tabData.has(tabId),
+                  tabData: this.tabData.get(tabId)
+                });
+                statusResponse.recordingMode = 'console';
+              }
+
+              console.debug(`[Background] GET_STATUS response for tab ${tabId}:`, statusResponse);
+              sendResponse(statusResponse);
+            }).catch(error => {
+              console.error(`[Background] Failed to initialize tab ${tabId}:`, error);
+              // Send minimal safe response
+              sendResponse({
+                recording: false,
+                eventCount: 0,
+                atCap: false,
+                recordingMode: 'console',
+                filters: { elementSelector: '', attributeFilters: '', stackKeywordFilter: '' },
+                trackEvents: { inputValueAccess: true, inputEvents: true, formSubmit: true, formDataCreation: true }
               });
             });
             return true; // Keep message channel open for async response
@@ -259,7 +282,17 @@ class EvidenceManager {
   }
 
   private getRecordingMode(tabId: number): 'console' | 'breakpoint' {
-    return this.tabData.get(tabId)?.recordingMode || 'console';
+    const tabInfo = this.tabData.get(tabId);
+    const mode = tabInfo?.recordingMode || 'console';
+
+    console.debug(`[Background] getRecordingMode(${tabId}):`, {
+      tabExists: !!tabInfo,
+      storedMode: tabInfo?.recordingMode,
+      returnedMode: mode,
+      domain: tabInfo?.domain
+    });
+
+    return mode;
   }
 
   private async setRecordingMode(tabId: number, mode: 'console' | 'breakpoint'): Promise<void> {
@@ -355,6 +388,39 @@ class EvidenceManager {
     }
   }
 
+  /**
+   * Deduplicates events using Explorer's algorithm
+   * Removes duplicate actions with same type + data + target.id
+   * Matches Explorer's shrinkPartree behavior
+   */
+  private deduplicateEvents(events: EvidenceEvent[]): {
+    deduplicated: EvidenceEvent[],
+    originalCount: number,
+    deduplicatedCount: number,
+    duplicatesRemoved: number
+  } {
+    const actionMap = new Set<string>();
+    const deduplicatedEvents: EvidenceEvent[] = [];
+
+    for (const event of events) {
+      // Explorer format: type__data__target.id
+      const key = `${event.type}__${event.data}__${event.target.id}`;
+
+      if (!actionMap.has(key)) {
+        actionMap.add(key);
+        deduplicatedEvents.push(event);
+      }
+      // Skip duplicates (matching Explorer's shrinkPartree behavior)
+    }
+
+    return {
+      deduplicated: deduplicatedEvents,
+      originalCount: events.length,
+      deduplicatedCount: deduplicatedEvents.length,
+      duplicatesRemoved: events.length - deduplicatedEvents.length
+    };
+  }
+
   private exportEvents(tabId: number, isAutoExport: boolean = false): void {
     const tabInfo = this.tabData.get(tabId);
     if (!tabInfo || tabInfo.events.length === 0) {
@@ -368,22 +434,30 @@ class EvidenceManager {
       return;
     }
 
+    // Apply Explorer-style deduplication
+    const deduplicationResult = this.deduplicateEvents(tabInfo.events);
+
     // Generate filename: evidence_google.com_2025-09-01_14-30-45.json
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0]; // 2025-09-01
     const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-'); // 14-30-45
     const filename = `evidence_${tabInfo.domain}_${dateStr}_${timeStr}.json`;
-    
-    // Create export data with metadata
+
+    // Create export data with metadata including deduplication statistics
     const exportData: ExportData = {
       metadata: {
         domain: tabInfo.domain,
         exportedAt: now.toISOString(),
-        eventCount: tabInfo.events.length,
+        eventCount: deduplicationResult.deduplicatedCount,
         recordingStarted: new Date(tabInfo.createdAt).toISOString(),
-        autoExported: isAutoExport
+        autoExported: isAutoExport,
+        deduplication: {
+          originalCount: deduplicationResult.originalCount,
+          deduplicatedCount: deduplicationResult.deduplicatedCount,
+          duplicatesRemoved: deduplicationResult.duplicatesRemoved
+        }
       },
-      events: tabInfo.events
+      events: deduplicationResult.deduplicated
     };
 
     // Trigger download using data URL (service workers don't support URL.createObjectURL)
@@ -397,10 +471,14 @@ class EvidenceManager {
     }, (_downloadId?: number) => {
       
       if (!isAutoExport) {
+        const message = deduplicationResult.duplicatesRemoved > 0
+          ? `Exported ${deduplicationResult.deduplicatedCount} events to ${filename} (${deduplicationResult.duplicatesRemoved} duplicates removed)`
+          : `Exported ${deduplicationResult.deduplicatedCount} events to ${filename}`;
+
         this.sendToTab(tabId, {
           type: 'HUD_MESSAGE',
           level: 'success',
-          message: `Exported ${tabInfo.events.length} events to ${filename}`
+          message: message
         });
       }
     });
@@ -443,8 +521,14 @@ class EvidenceManager {
       const storage = await chrome.storage.local.get(storageKey);
       const state = storage[storageKey];
 
+      console.debug(`[Background] loadTabState for domain ${domain}:`, {
+        storageKey,
+        foundInStorage: !!state,
+        loadedState: state,
+        recordingMode: state?.recordingMode
+      });
+
       if (state) {
-        console.debug(`[Background] Loaded state for domain ${domain}:`, state);
         return state;
       }
       return null;

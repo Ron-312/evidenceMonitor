@@ -3,7 +3,8 @@
 
 import { HookManager } from './hook-manager';
 import { recordingModeHandler, RecordingMode } from './state/recording-modes-manager';
-import { filterManager, FilterOptions } from './state/filter-manager';
+import { filterManager } from './state/filter-manager';
+import { FilterOptions } from '../shared-types';
 import { trackEventsManager } from './state/track-events-manager';
 import { TrackEventsState } from '../shared-types';
 
@@ -23,15 +24,25 @@ if (!(window as any).__REFLECTIZ_INJECTED__) {
     // This ensures we can receive initial state from content script immediately
     window.addEventListener('message', (event) => {
       if (event.source !== window) return;
-      
+
       if (event.data.type === 'SET_RECORDING_MODE') {
         const mode = event.data.recordingMode as RecordingMode;
+        console.debug(`[InjectedScript] Received SET_RECORDING_MODE:`, {
+          newMode: mode,
+          currentMode: recordingModeHandler.getMode(),
+          isChanging: mode !== recordingModeHandler.getMode()
+        });
         recordingModeHandler.setMode(mode);
-        console.debug(`[InjectedScript] Recording mode set to: ${mode}`);
+        console.debug(`[InjectedScript] Recording mode successfully set to: ${mode}`);
       } else if (event.data.type === 'SET_RECORDING_STATE') {
         const recording = event.data.recording as boolean;
+        console.debug(`[InjectedScript] Received SET_RECORDING_STATE:`, {
+          newState: recording,
+          currentState: recordingModeHandler.isCurrentlyRecording(),
+          isChanging: recording !== recordingModeHandler.isCurrentlyRecording()
+        });
         recordingModeHandler.setRecording(recording);
-        console.debug(`[InjectedScript] Recording state set to: ${recording}`);
+        console.debug(`[InjectedScript] Recording state successfully set to: ${recording}`);
       } else if (event.data.type === 'SET_FILTERS') {
         const filters = event.data.filters as FilterOptions;
         filterManager.setFilters(filters);
@@ -40,6 +51,19 @@ if (!(window as any).__REFLECTIZ_INJECTED__) {
         const trackEvents = event.data.trackEvents as TrackEventsState;
         trackEventsManager.setTrackEvents(trackEvents);
         console.debug(`[InjectedScript] Track Events updated:`, trackEvents);
+      } else if (event.data.type === 'GET_INJECTED_STATE') {
+        // Respond with current state for validation
+        const currentState = {
+          recordingMode: recordingModeHandler.getMode(),
+          recording: recordingModeHandler.isCurrentlyRecording(),
+          filters: filterManager.getFilters(),
+          trackEvents: trackEventsManager.getTrackEvents()
+        };
+        console.debug(`[InjectedScript] State requested, responding with:`, currentState);
+        window.postMessage({
+          type: 'INJECTED_STATE_RESPONSE',
+          state: currentState
+        }, '*');
       }
     });
     

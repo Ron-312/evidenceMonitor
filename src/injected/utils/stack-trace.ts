@@ -9,12 +9,6 @@ interface ParsedStackFrame {
 }
 
 export class StackTrace {
-  // Chrome extension URL patterns to filter out
-  private static readonly EXTENSION_PATTERNS = [
-    'chrome-extension://',
-    'moz-extension://',
-    'webkit-masked-url://'
-  ];
 
   // Anonymous function patterns to ignore
   private static readonly ANONYMOUS_PATTERNS = [
@@ -128,25 +122,51 @@ export class StackTrace {
 
   /**
    * Determines if stack frame should be included in evidence
-   * Filters out extension frames and invalid URLs
+   * Uses smart blacklist filtering to exclude noise while preserving attack evidence
    */
   private static shouldIncludeFrame(frame: ParsedStackFrame): boolean {
-    // Filter out extension frames
-    const isExtensionFrame = this.EXTENSION_PATTERNS.some(pattern => 
-      frame.url.includes(pattern)
-    );
+    // 1. Filter out OUR extension specifically (but allow other extensions for detection)
+    const isOurExtension = frame.url.includes('chrome-extension://') &&
+                          (frame.url.includes('injected.js') ||
+                           frame.url.includes('content.js') ||
+                           frame.url.includes('background.js') ||
+                           frame.url.includes('shared-types.js'));
 
-    if (isExtensionFrame) {
+    if (isOurExtension) {
+      return false;  // Hide our extension code from stack traces
+    }
+
+    // 2. Filter out browser internal pages (but allow iframe contexts like about:srcdoc)
+    const isBrowserInternal = frame.url.startsWith('about:config') ||
+                             frame.url.startsWith('about:chrome') ||
+                             frame.url.startsWith('about:debugging') ||
+                             frame.url.startsWith('about:preferences') ||
+                             frame.url.startsWith('about:memory') ||
+                             frame.url.startsWith('about:support') ||
+                             frame.url.startsWith('chrome://') ||
+                             frame.url.startsWith('edge://') ||
+                             frame.url.startsWith('firefox://');
+
+    if (isBrowserInternal) {
+      return false;  // Hide browser internals
+    }
+
+    // 3. Filter out empty or malformed URLs
+    if (!frame.url || frame.url.trim() === '' || frame.url === 'null' || frame.url === 'undefined') {
       return false;
     }
 
-    // Only include HTTP/HTTPS URLs and valid local files
-    const isValidUrl = frame.url.startsWith('http://') || 
-                      frame.url.startsWith('https://') ||
-                      frame.url.startsWith('file://') ||
-                      frame.url.startsWith('/');
-
-    return isValidUrl;
+    // 4. Allow everything else - websites, iframes, data URLs, blob URLs, etc.
+    // This includes:
+    // - http://site.com - Regular websites
+    // - https://site.com - Secure websites
+    // - about:srcdoc - Iframe content (CRITICAL for cross-frame detection)
+    // - about:blank - Dynamic iframes
+    // - data:text/html - Data URL content
+    // - blob:http://site.com/uuid - Blob URLs
+    // - file://path - Local files
+    // - chrome-extension://other-ext/ - Other extensions (potential malware)
+    return true;
   }
 
   /**
@@ -168,19 +188,22 @@ export class StackTrace {
   }
 
   /**
-   * Checks if function name is meaningful (not anonymous)
+   * Checks if function name should be included in stack trace
    */
   private static isMeaningfulFunctionName(functionName: string): boolean {
     if (!functionName || functionName.trim() === '') {
       return false;
     }
 
-    // Filter out anonymous function patterns
-    const isAnonymous = this.ANONYMOUS_PATTERNS.some(pattern =>
-      functionName.includes(pattern)
-    );
+    // Current: Allow all function names (matches Explorer approach)
+    return true;
 
-    return !isAnonymous;
+    // Alternative: Filter only completely meaningless anonymous patterns
+    // Uncomment below and comment out above to enable smart filtering:
+    // const isCompletelyMeaningless = functionName === '<anonymous>' ||
+    //                                functionName === 'Object.<anonymous>' ||
+    //                                functionName === 'anonymous';
+    // return !isCompletelyMeaningless;
   }
 
   /**

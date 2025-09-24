@@ -12,8 +12,6 @@ export class EvidenceCollector {
   private elementRegistry: ElementRegistry;
   private isContentScriptReady: boolean = false;
   private pendingEvidence: EvidenceEvent[] = [];
-  private recentEvents: Map<string, number> = new Map();
-  private readonly deduplicationWindow: number = 50; // 50ms
   private readonly maxQueueSize: number = 1000;
   private readonly handshakeTimeout: number = 5000; // 5 seconds
   private handshakeTimer: number | null = null;
@@ -39,15 +37,8 @@ export class EvidenceCollector {
     
     // Apply filters - check if this element and stack trace should be monitored
     const shouldProceed = filterManager.shouldMonitor(element, evidence.stackTrace);
-    
-    if (shouldProceed) {
-      // Check for deduplication
-      if (this.isDuplicate(evidence)) {
-        return { shouldProceed: false, evidence };
-      }
 
-      // Record this evidence in deduplication map
-      this.recordForDeduplication(evidence);
+    if (shouldProceed) {
 
       // Console log if in console mode
       recordingModeHandler.logEvidence(element, action, hookType, evidence.stackTrace);
@@ -113,55 +104,6 @@ export class EvidenceCollector {
     }
   }
 
-  /**
-   * Checks if evidence is duplicate within deduplication window
-   */
-  private isDuplicate(evidence: EvidenceEvent): boolean {
-    const key = this.generateDeduplicationKey(evidence);
-    const now = performance.now();
-    const lastTime = this.recentEvents.get(key);
-    
-    if (lastTime && (now - lastTime) < this.deduplicationWindow) {
-      return true; // Duplicate within window
-    }
-    
-    return false;
-  }
-
-  /**
-   * Records evidence in deduplication map and cleans old entries
-   */
-  private recordForDeduplication(evidence: EvidenceEvent): void {
-    const key = this.generateDeduplicationKey(evidence);
-    const now = performance.now();
-    
-    this.recentEvents.set(key, now);
-    
-    // Periodic cleanup to prevent memory growth
-    if (this.recentEvents.size > 1000) {
-      this.cleanupDeduplicationMap(now);
-    }
-  }
-
-  /**
-   * Generates deduplication key including full stack trace
-   */
-  private generateDeduplicationKey(evidence: EvidenceEvent): string {
-    return `${evidence.type}:${evidence.target.id}:${evidence.stackTrace.join('|')}`;
-  }
-
-  /**
-   * Removes old entries from deduplication map
-   */
-  private cleanupDeduplicationMap(currentTime: number): void {
-    const cleanupThreshold = currentTime - (this.deduplicationWindow * 10);
-    
-    for (const [key, timestamp] of this.recentEvents.entries()) {
-      if (timestamp < cleanupThreshold) {
-        this.recentEvents.delete(key);
-      }
-    }
-  }
 
   /**
    * Sends evidence immediately or queues if content script not ready
@@ -264,16 +206,14 @@ export class EvidenceCollector {
   /**
    * Gets current collector statistics for debugging
    */
-  getStats(): { 
-    ready: boolean; 
-    queueSize: number; 
-    deduplicationEntries: number;
+  getStats(): {
+    ready: boolean;
+    queueSize: number;
     memoryPressure: boolean;
   } {
     return {
       ready: this.isContentScriptReady,
       queueSize: this.pendingEvidence.length,
-      deduplicationEntries: this.recentEvents.size,
       memoryPressure: this.pendingEvidence.length > this.maxQueueSize * 0.8
     };
   }
@@ -283,9 +223,8 @@ export class EvidenceCollector {
    */
   clearState(): void {
     this.pendingEvidence = [];
-    this.recentEvents.clear();
     this.isContentScriptReady = false;
-    
+
     if (this.handshakeTimer) {
       clearTimeout(this.handshakeTimer);
       this.handshakeTimer = null;

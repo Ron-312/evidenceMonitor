@@ -1,5 +1,7 @@
 // Recording Modes - Manages recording mode and console logging for evidence events
 
+import { generateEvidenceType } from '../config/evidence-config';
+
 export type RecordingMode = 'console' | 'breakpoint';
 
 /**
@@ -52,7 +54,7 @@ export class RecordingModeHandler {
     if (!this.isRecording || this.currentMode !== 'console') return;
 
     const targetInfo = this.getTargetInfo(target);
-    const evidenceType = this.generateEvidenceType(target, action, hookType);
+    const evidenceType = generateEvidenceType(target, action, hookType);
     
     console.group(`🔍 Surveillance Detected: ${evidenceType}`);
     console.log('Target:', targetInfo);
@@ -82,27 +84,6 @@ export class RecordingModeHandler {
     return `${tagName}${id}${className}${name}`;
   }
 
-  /**
-   * Generates evidence type string matching the evidence-config pattern
-   */
-  private generateEvidenceType(
-    target: Element, 
-    action: string, 
-    hookType: 'property' | 'eventHandler' | 'addEventListener'
-  ): string {
-    const targetName = target.tagName.toLowerCase();
-    
-    switch (hookType) {
-      case 'property':
-        return `${targetName}.${action}/get`;
-      case 'eventHandler':  
-        return `${targetName}.${action}/set`;
-      case 'addEventListener':
-        return `${targetName}.addEventListener(${action})`;
-      default:
-        return `${targetName}.${action}`;
-    }
-  }
 }
 
 // Global instance
