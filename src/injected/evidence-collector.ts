@@ -28,8 +28,8 @@ export class EvidenceCollector {
    * Returns decision object for debugger breakpoint logic
    */
   createAndSendEvidence(
-    element: Element, 
-    action: string, 
+    element: Element,
+    action: string,
     hookType: 'property' | 'eventHandler' | 'addEventListener'
   ): { shouldProceed: boolean; evidence: EvidenceEvent } {
     // Create evidence object first to get stack trace (single capture)
@@ -55,11 +55,25 @@ export class EvidenceCollector {
    */
   private createEvidence(
     element: Element,
-    action: string, 
+    action: string,
     hookType: 'property' | 'eventHandler' | 'addEventListener'
   ): EvidenceEvent {
     const elementId = this.elementRegistry.getElementId(element);
+
+    // Debug stack trace capture for addEventListener hooks
+    if (hookType === 'addEventListener') {
+      const error = new Error();
+      const rawStack = error.stack;
+      console.debug('[InjectedScript] Raw stack trace for addEventListener:', rawStack);
+    }
+
     const stackTrace = StackTrace.capture();
+
+    // Debug processed stack trace for addEventListener hooks
+    if (hookType === 'addEventListener') {
+      console.debug('[InjectedScript] Processed stack trace for addEventListener:', stackTrace);
+    }
+
     const evidenceType = generateEvidenceType(element, action, hookType);
     
     return {
@@ -67,7 +81,7 @@ export class EvidenceCollector {
       type: evidenceType,
       start: performance.now(),
       duration: 0, // Always 0 for surveillance detection
-      data: this.getElementData(element),
+      data: `${this.getElementData(element)}`,
       target: { id: elementId },
       stackTrace: stackTrace
     };

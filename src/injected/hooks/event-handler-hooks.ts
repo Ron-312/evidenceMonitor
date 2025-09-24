@@ -268,6 +268,15 @@ export class EventHandlerHooks {
         return { shouldProceed: false };
       }
 
+      // Check if this call is from our own extension (prevent recursive detection)
+      const stack = new Error().stack;
+      const isFromExtension = stack && stack.includes('chrome-extension://') &&
+                             (stack.includes('injected.js') || stack.includes('event-handler-hooks'));
+
+      if (isFromExtension) {
+        return { shouldProceed: false };
+      }
+
       // Basic config check - should this element/property be monitored?
       if (!shouldHookEventHandlerSetter(target, propertyName)) {
         return { shouldProceed: false };

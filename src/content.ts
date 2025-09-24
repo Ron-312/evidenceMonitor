@@ -823,7 +823,7 @@ function setupInjectedScriptBridge(): void {
         console.warn('[ContentScript] Extension context invalidated - cannot send evidence');
         return;
       }
-      
+
       // Forward evidence to background service worker
       chrome.runtime.sendMessage({
         type: 'EVIDENCE_EVENT',
@@ -831,6 +831,32 @@ function setupInjectedScriptBridge(): void {
       }).catch((error) => {
         console.error('[ContentScript] Failed to forward evidence to background:', error);
       });
+    }
+
+    // Handle evidence events from main world script (early addEventListener hooks)
+    if (event.data.type === 'MAIN_WORLD_EVIDENCE_EVENT') {
+      // Check if extension context is still valid
+      if (!chrome.runtime?.id) {
+        console.warn('[ContentScript] Extension context invalidated - cannot send main world evidence');
+        return;
+      }
+
+      console.debug('[ContentScript] Received main world evidence:', {
+        actionId: event.data.event.actionId,
+        type: event.data.event.type,
+        stackTrace: event.data.event.stackTrace,
+        stackFrameCount: event.data.event.stackTrace?.length || 0
+      });
+
+      // Forward evidence to background service worker
+      chrome.runtime.sendMessage({
+        type: 'EVIDENCE_EVENT',
+        event: event.data.event
+      }).catch((error) => {
+        console.error('[ContentScript] Failed to forward main world evidence to background:', error);
+      });
+
+      console.debug('[ContentScript] Forwarded main world evidence to background');
     }
     
     // Handle injected script ready signal

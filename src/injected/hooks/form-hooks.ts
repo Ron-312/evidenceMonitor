@@ -144,9 +144,17 @@ export class FormHooks {
         // Call original constructor first to get FormData instance
         const formDataInstance = new originalFormData(form, submitter);
 
+        // Check if this call is from our own extension (prevent recursive detection)
+        const stack = new Error().stack;
+        const isFromExtension = stack && stack.includes('chrome-extension://') &&
+                               (stack.includes('injected.js') || stack.includes('form-hooks'));
+
         // Only monitor if FormData was created with a form element (matches Explorer)
         // AND config allows FormData creation monitoring
-        if (form && form instanceof HTMLFormElement && shouldHookFormDataCreation('FormData')) {
+        // AND it's not from our own extension
+        if (form && form instanceof HTMLFormElement &&
+            shouldHookFormDataCreation('FormData') &&
+            !isFromExtension) {
           console.debug(`[${self.name}] FormData constructor called with form:`, form);
 
           // Generate evidence for each form field (matches Explorer pattern)
@@ -300,6 +308,16 @@ export class FormHooks {
     try {
       console.debug(`[${this.name}] Monitoring form submission (${submissionType}):`, form);
 
+      // Check if this call is from our own extension (prevent recursive detection)
+      const stack = new Error().stack;
+      const isFromExtension = stack && stack.includes('chrome-extension://') &&
+                             (stack.includes('injected.js') || stack.includes('form-hooks'));
+
+      if (isFromExtension) {
+        console.debug(`[${this.name}] Skipping form submission monitoring - called from extension`);
+        return;
+      }
+
       // Create FormData to get all form fields (same approach as Explorer)
       const formData = new FormData(form);
       const formAction = form.action || window.location.href;
@@ -316,8 +334,8 @@ export class FormHooks {
         console.debug(`[${this.name}] Form submission field detected:`, { key, element, formAction });
 
         // Create evidence for this form field submission
-        const action = submissionType === 'method' ? 'submit' : 'addEventListener';
-        const hookType = submissionType === 'method' ? 'property' : 'addEventListener';
+        const action = 'submit'; // Always 'submit' - this is form submission surveillance
+        const hookType = submissionType === 'method' ? 'property' : 'eventHandler';
 
         const result = this.evidenceCollector.createAndSendEvidence(
           element,

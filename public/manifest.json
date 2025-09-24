@@ -27,6 +27,13 @@
         "all_frames": true,
         "match_about_blank": true,
         "run_at": "document_start"
+    }, {
+        "matches": ["<all_urls>"],
+        "js": ["main-world-hooks.js"],
+        "all_frames": true,
+        "match_about_blank": true,
+        "run_at": "document_start",
+        "world": "MAIN"
     }],
     "action": {
         "default_popup": "popup.html"

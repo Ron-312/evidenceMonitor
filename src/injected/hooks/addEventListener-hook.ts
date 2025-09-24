@@ -18,9 +18,19 @@ export class AddEventListenerHook {
 
   constructor(evidenceCollector: EvidenceCollector) {
     this.evidenceCollector = evidenceCollector;
-    
-    // Store original method reference
-    this.originalAddEventListener = EventTarget.prototype.addEventListener;
+
+    // Store original method reference - use truly original if main world hook exposed it
+    const originalFromMainWorld = (window as any).__ORIGINAL_ADD_EVENT_LISTENER__;
+    const currentPrototype = EventTarget.prototype.addEventListener;
+
+    this.originalAddEventListener = originalFromMainWorld || currentPrototype;
+
+    console.debug('[AddEventListenerHook] Constructor - method selection:', {
+      hasOriginalFromMainWorld: !!originalFromMainWorld,
+      currentPrototypeName: currentPrototype.name || 'anonymous',
+      selectedMethod: this.originalAddEventListener.name || 'anonymous',
+      isMainWorldHookActive: !!(window as any).__REFLECTIZ_MAIN_WORLD_HOOKS__
+    });
   }
 
   /**
@@ -40,6 +50,28 @@ export class AddEventListenerHook {
         listener: EventListenerOrEventListenerObject | null,
         options?: boolean | AddEventListenerOptions
       ) {
+        // Debug recursive calls with eventType "addEventListener" - persist to JSON
+        // if (type === 'addEventListener') {
+        //   const debugData = {
+        //     actionId: `DEBUG_INJ_RECURSIVE_${Date.now()}`,
+        //     type: 'DEBUG.recursiveCall',
+        //     start: performance.now(),
+        //     duration: 0,
+        //     data: `[INJECTED RECURSIVE] addEventListener("${type}") on ${this instanceof Element ? this.tagName : 'non-Element'}`,
+        //     target: { id: `debug-${Date.now()}` },
+        //     stackTrace: new Error().stack?.split('\n').slice(1, 6) || ['[NO_STACK]']
+        //   };
+
+          // // Send via evidence collector for persistence
+          // window.postMessage({
+          //   type: 'EVIDENCE_EVENT',
+          //   event: debugData
+          // }, '*');
+
+        //   console.error('[AddEventListenerHook] 🚨 RECURSIVE CALL - logged to JSON');
+        // }
+
+
         // Monitor this addEventListener call for surveillance and get filter decision
         const { shouldProceed } = self.monitorAddEventListenerCall(this, type, listener, options);
 
@@ -108,6 +140,12 @@ export class AddEventListenerHook {
         if (!this.shouldMonitorTarget(target, eventType)) {
           return { shouldProceed: false }; // Skip monitoring for this target/event combination
         }
+
+        console.debug('[AddEventListenerHook] Creating evidence for:', {
+          eventType: eventType,
+          hookType: 'addEventListener',
+          targetTag: target.tagName
+        });
 
         const result = this.evidenceCollector.createAndSendEvidence(
           target,

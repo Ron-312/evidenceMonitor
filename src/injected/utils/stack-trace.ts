@@ -61,6 +61,7 @@ export class StackTrace {
         }
       }
 
+
       // Return meaningful frames or error indicator if none found
       return formattedFrames.length > 0 ? formattedFrames : ['[NO_VALID_STACK_FRAMES]'];
     } catch (parseError) {
@@ -130,6 +131,7 @@ export class StackTrace {
                           (frame.url.includes('injected.js') ||
                            frame.url.includes('content.js') ||
                            frame.url.includes('background.js') ||
+                           frame.url.includes('main-world-hooks.js') ||
                            frame.url.includes('shared-types.js'));
 
     if (isOurExtension) {
