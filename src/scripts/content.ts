@@ -61,6 +61,7 @@ class HUD {
       <div class="hud-header">
         <h3>Input Monitoring</h3>
         <div class="hud-header-controls">
+          <button class="user-guide-toggle" title="Open User Guide">?</button>
           <button class="minimize-toggle" title="Minimize HUD">−</button>
           <button class="theme-toggle" title="Toggle light/dark theme">🌙</button>
         </div>
@@ -178,6 +179,61 @@ class HUD {
           <div class="hud-minimized-inner"></div>
         </div>
       </div>
+
+      <!-- User Guide Popup -->
+      <div class="user-guide-popup" style="display: none;">
+        <div class="user-guide-content">
+          <div class="user-guide-header">
+            <h3>Evidence Monitor User Guide</h3>
+            <button class="user-guide-close" title="Close Guide">×</button>
+          </div>
+          <div class="user-guide-body">
+            <h4>🎯 Getting Started</h4>
+            <p>1. Click <strong>Start Recording</strong> to begin monitoring input surveillance</p>
+            <p>2. Interact with elements on the page to capture evidence</p>
+            <p>3. Use filters to focus on specific elements or scripts</p>
+
+            <h4>🔍 Filter Options</h4>
+            <div class="guide-section">
+              <p><strong>Element Selector:</strong> CSS selector to target specific elements</p>
+              <code>Example: input[name="password"], .secret-field</code>
+
+              <p><strong>Attribute Filters:</strong> Key-value pairs for element attributes</p>
+              <code>Example: name=username, type=password</code>
+
+              <p><strong>Stack Keyword Filter:</strong> Scripts to monitor in call stack</p>
+              <code>Example: analytics, fbevents, tracking</code>
+            </div>
+
+            <h4>🔧 Filter Behavior</h4>
+            <div class="guide-section">
+              <p><strong>Single Filter:</strong> Only that filter type must match</p>
+              <p><strong>Multiple Filters:</strong> ALL filter types must match (AND logic)</p>
+              <p><strong>No Filters:</strong> Monitor everything</p>
+            </div>
+
+            <h4>📊 Track Events</h4>
+            <div class="guide-section">
+              <p><strong>Input Value Access:</strong> Detects when scripts read input values</p>
+              <p><strong>Input Events:</strong> Monitors event listeners on form elements</p>
+              <p><strong>Form Submit:</strong> Tracks form submission attempts</p>
+              <p><strong>FormData Creation:</strong> Catches new FormData() calls</p>
+            </div>
+
+            <h4>📝 Recording Modes</h4>
+            <div class="guide-section">
+              <p><strong>Console:</strong> Log events to browser developer console</p>
+              <p><strong>Breakpoint:</strong> Pause JavaScript execution when surveillance detected</p>
+            </div>
+
+            <h4>💾 Export & Clear</h4>
+            <div class="guide-section">
+              <p><strong>Export Data:</strong> Download captured evidence as JSON</p>
+              <p><strong>Clear Data:</strong> Remove all recorded evidence</p>
+            </div>
+          </div>
+        </div>
+      </div>
     `;
     return hud;
   }
@@ -195,6 +251,8 @@ class HUD {
     const clearBtn = this.hudElement.querySelector('.clear-data') as HTMLButtonElement;
     const themeToggle = this.hudElement.querySelector('.theme-toggle') as HTMLButtonElement;
     const minimizeToggle = this.hudElement.querySelector('.minimize-toggle') as HTMLButtonElement;
+    const userGuideToggle = this.hudElement.querySelector('.user-guide-toggle') as HTMLButtonElement;
+    const userGuideClose = this.hudElement.querySelector('.user-guide-close') as HTMLButtonElement;
     const toggleSwitch = this.hudElement.querySelector('.toggle-switch') as HTMLElement;
 
     startBtn?.addEventListener('click', () => this.toggleRecording());
@@ -210,6 +268,14 @@ class HUD {
 
     // Minimize toggle handler
     minimizeToggle?.addEventListener('click', () => this.onMinimizeToggle());
+
+    // User guide handlers
+    userGuideToggle?.addEventListener('click', () => this.onUserGuideToggle());
+    userGuideClose?.addEventListener('click', (event) => {
+      event.stopPropagation(); // Prevent event bubbling to popup
+      event.preventDefault(); // Also prevent default behavior
+      this.onUserGuideClose();
+    });
 
     // Recording mode section handlers
     this.setupRecordingModeHandlers();
@@ -473,6 +539,41 @@ class HUD {
       localStorage.setItem('hud-minimized', newMinimized.toString());
     } catch (error) {
       console.warn('[HUD] Failed to save minimize preference:', error);
+    }
+  }
+
+  private onUserGuideToggle(): void {
+    const userGuidePopup = this.hudElement.querySelector('.user-guide-popup') as HTMLElement;
+    if (userGuidePopup) {
+      userGuidePopup.style.display = 'block';
+      console.debug('[HUD] User guide opened');
+
+      // Add click outside to close functionality
+      const handleClickOutside = (event: MouseEvent) => {
+        const target = event.target as HTMLElement;
+        const userGuideContent = this.hudElement.querySelector('.user-guide-content') as HTMLElement;
+        const closeButton = this.hudElement.querySelector('.user-guide-close') as HTMLElement;
+
+        // Don't close if clicking the close button (let its own handler work)
+        if (closeButton && closeButton.contains(target)) {
+          return;
+        }
+
+        // Close if clicking outside the content area
+        if (!userGuideContent.contains(target)) {
+          this.onUserGuideClose();
+          userGuidePopup.removeEventListener('click', handleClickOutside);
+        }
+      };
+      userGuidePopup.addEventListener('click', handleClickOutside);
+    }
+  }
+
+  private onUserGuideClose(): void {
+    const userGuidePopup = this.hudElement.querySelector('.user-guide-popup') as HTMLElement;
+    if (userGuidePopup) {
+      userGuidePopup.style.display = 'none';
+      console.debug('[HUD] User guide closed');
     }
   }
 
