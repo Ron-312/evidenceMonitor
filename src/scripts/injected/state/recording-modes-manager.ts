@@ -1,6 +1,6 @@
 // Recording Modes - Manages recording mode and console logging for evidence events
 
-import { generateEvidenceType } from '../config/evidence-config';
+import { generateEvidenceType } from '../../config/evidence-config';
 
 export type RecordingMode = 'console' | 'breakpoint';
 

@@ -1,7 +1,7 @@
 // Track Events Manager - Manages Track Events checkbox states for surveillance detection
 // Controls which types of surveillance hooks are active based on HUD checkbox settings
 
-import { TrackEventsState } from '../../shared-types';
+import { TrackEventsState } from '../utils/shared-types';
 
 /**
  * Manages Track Events state received from HUD checkboxes

@@ -1,0 +1,45 @@
+{
+    "manifest_version": 3,
+    "name": "Evidence Monitor",
+    "version": "1.0",
+    "description": "Records evidence of scripts interacting with form inputs",
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "permissions": [
+        "activeTab",
+        "scripting",
+        "downloads"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "content_scripts": [{
+        "matches": ["<all_urls>"],
+        "js": ["content.js"],
+        "css": ["hud.css"],
+        "all_frames": true,
+        "match_about_blank": true,
+        "run_at": "document_start"
+    }, {
+        "matches": ["<all_urls>"],
+        "js": ["main-world-hooks.js"],
+        "all_frames": true,
+        "match_about_blank": true,
+        "run_at": "document_start",
+        "world": "MAIN"
+    }],
+    "action": {
+        "default_popup": "popup.html"
+    },
+    "web_accessible_resources": [{
+        "resources": ["injected.js"],
+        "matches": ["<all_urls>"]
+    }]
+}

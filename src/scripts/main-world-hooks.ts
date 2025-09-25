@@ -1,8 +1,8 @@
 // Main World Script - Runs in page context to hook EventTarget.prototype.addEventListener
 // This script runs with "world": "MAIN" at document_start to catch early addEventListener calls
 
-import { EVIDENCE_CONFIG, isFormElement, generateEvidenceType } from './injected/config/evidence-config';
-import { StackTrace } from './injected/utils/stack-trace';
+import { EVIDENCE_CONFIG, isFormElement, generateEvidenceType } from './config/evidence-config';
+import { StackTrace } from './utils/stack-trace';
 
 // Simple element ID generator (matches pattern from ElementRegistry)
 let elementIdCounter = 0;

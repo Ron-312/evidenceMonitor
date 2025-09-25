@@ -1,4 +1,4 @@
-import { FilterOptions, TrackEventsState, HudState } from './shared-types';
+import { FilterOptions, TrackEventsState, HudState } from './utils/shared-types';
 
 class HUD {
   private hudElement: HTMLDivElement;

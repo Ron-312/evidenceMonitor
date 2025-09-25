@@ -2,7 +2,7 @@
 // Monitors value access on form elements to detect scripts reading user input
 
 import { EvidenceCollector } from '../evidence-collector';
-import { shouldHookPropertyGetter, EVIDENCE_CONFIG } from '../config/evidence-config';
+import { shouldHookPropertyGetter, EVIDENCE_CONFIG } from '../../config/evidence-config';
 import { recordingModeHandler } from '../state/recording-modes-manager';
 
 /**

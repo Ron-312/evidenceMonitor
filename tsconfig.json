@@ -9,16 +9,18 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "./public",
-    "rootDir": "./src",
+    "rootDir": "./src/scripts",
     "declaration": false,
     "removeComments": true
   },
   "include": [
-    "src/**/*.ts"
+    "src/scripts/background.ts",
+    "src/scripts/content.ts",
+    "src/scripts/main-world-hooks.ts",
+    "src/scripts/utils/shared-types.ts"
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "src/injected/**/*"
+    "dist"
   ]
 }

@@ -2,11 +2,11 @@
 // Handles handshake protocol and communication with content script
 
 import { ElementRegistry } from './utils/element-registry';
-import { StackTrace } from './utils/stack-trace';
-import { generateEvidenceType } from './config/evidence-config';
+import { StackTrace } from '../utils/stack-trace';
+import { generateEvidenceType } from '../config/evidence-config';
 import { recordingModeHandler } from './state/recording-modes-manager';
 import { filterManager } from './state/filter-manager';
-import { EvidenceEvent } from '../shared-types';
+import { EvidenceEvent } from '../utils/shared-types';
 
 export class EvidenceCollector {
   private elementRegistry: ElementRegistry;

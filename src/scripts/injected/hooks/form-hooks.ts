@@ -3,7 +3,7 @@
 // Based on Explorer's reference implementation patterns
 
 import { EvidenceCollector } from '../evidence-collector';
-import { isFormElement, shouldHookFormSubmission, shouldHookFormDataCreation } from '../config/evidence-config';
+import { isFormElement, shouldHookFormSubmission, shouldHookFormDataCreation } from '../../config/evidence-config';
 import { recordingModeHandler } from '../state/recording-modes-manager';
 
 /**

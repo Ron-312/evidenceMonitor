@@ -11,7 +11,7 @@ import {
   HudMessage,
   BackgroundMessage,
   ExportData
-} from './shared-types';
+} from './utils/shared-types';
 
 class EvidenceManager {
   private tabData: Map<number, TabData>;

@@ -4,9 +4,9 @@
 import { HookManager } from './hook-manager';
 import { recordingModeHandler, RecordingMode } from './state/recording-modes-manager';
 import { filterManager } from './state/filter-manager';
-import { FilterOptions } from '../shared-types';
-import { trackEventsManager } from './state/track-events-manager';
-import { TrackEventsState } from '../shared-types';
+import { FilterOptions } from '../utils/shared-types';
+import { trackEventsManager } from './../state/track-events-manager';
+import { TrackEventsState } from '../utils/shared-types';
 
 // ============================================================================
 // INITIALIZATION

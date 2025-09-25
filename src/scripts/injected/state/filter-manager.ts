@@ -1,7 +1,7 @@
 // Filter Manager - Handles element and stack trace filtering logic
 // Determines if surveillance events should be captured based on user-defined filters
 
-import { FilterOptions } from '../../shared-types';
+import { FilterOptions } from '../../utils/shared-types';
 
 interface AttributeFilter {
   name: string;
