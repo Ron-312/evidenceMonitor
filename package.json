@@ -1,13 +1,13 @@
 {
     "scripts": {
-        "build": "npm run build:clean && npm run build:assets && npm run build:ts && npm run build:content && npm run build:injected && npm run build:main-world",
+        "build": "npm run build:clean && npm run build:assets && npm run build:ts && npm run build:content && npm run build:injected && npm run build:main-world && powershell \"Compress-Archive -Path 'public\\*' -DestinationPath 'evidence-monitor-extension.zip' -Force\" && echo Extension packaged as evidence-extension.zip",
         "build:clean": "rm -rf public/* || true",
         "build:assets": "cp src/manifest.json public/ && cp src/assets/styles/hud.css public/ && cp src/assets/html/popup.html public/ && cp -r src/assets/icons public/",
         "build:ts": "tsc",
         "build:content": "esbuild src/scripts/content.ts --bundle --outfile=public/content.js --platform=browser --target=es2020 --format=iife",
         "build:injected": "esbuild src/scripts/injected/main.ts --bundle --outfile=public/injected.js --platform=browser --target=es2020 --format=iife",
         "build:main-world": "esbuild src/scripts/main-world-hooks.ts --bundle --outfile=public/main-world-hooks.js --platform=browser --target=es2020 --format=iife",
-        "package": "npm run build && powershell \"Compress-Archive -Path 'public\\*' -DestinationPath 'input-evidence-extension.zip' -Force\" && echo Extension packaged as evidence-extension.zip",
+        "package": "npm run build && powershell \"Compress-Archive -Path 'public\\*' -DestinationPath 'evidence-monitor-extension.zip' -Force\" && echo Extension packaged as evidence-monitor-extension.zip",
         "tsc": "npm run build"
     },
     "devDependencies": {
