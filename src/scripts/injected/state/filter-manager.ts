@@ -86,10 +86,36 @@ export class FilterManager {
 
   /**
    * Combined filter check for element and stack trace
-   * Returns true if BOTH element and stack filters pass (AND logic between filter types)
+   * Logic: If both filter types are set, use AND. If only one type is set, that one must match.
    */
   shouldMonitor(element: Element, stackTrace: string[]): boolean {
-    return this.shouldMonitorElement(element) && this.shouldMonitorStackTrace(stackTrace);
+    // If no filters are set, monitor everything
+    if (this.hasNoFilters()) {
+      return true;
+    }
+
+    const hasElementFilters = !!(this.filters.elementSelector.trim() || this.filters.attributeFilters.trim());
+    const hasStackFilter = !!this.filters.stackKeywordFilter.trim();
+
+    // If both filter types are set, both must match (AND logic)
+    if (hasElementFilters && hasStackFilter) {
+      const elementMatches = this.shouldMonitorElement(element);
+      const stackMatches = this.shouldMonitorStackTrace(stackTrace);
+      return elementMatches && stackMatches;
+    }
+
+    // If only element filters are set, element must match
+    if (hasElementFilters && !hasStackFilter) {
+      return this.shouldMonitorElement(element);
+    }
+
+    // If only stack filter is set, stack must match
+    if (!hasElementFilters && hasStackFilter) {
+      return this.shouldMonitorStackTrace(stackTrace);
+    }
+
+    // Fallback (should not reach here)
+    return false;
   }
 
   /**

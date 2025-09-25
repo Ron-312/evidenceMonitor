@@ -956,11 +956,12 @@ function validateStateSync(): void {
     });
 
     if (hudRecordingMode !== injectedState.recordingMode) {
-      console.error('[ContentScript] ❌ STATE SYNC ISSUE DETECTED!', {
-        hudMode: hudRecordingMode,
-        injectedMode: injectedState.recordingMode,
-        problem: 'HUD and injected script have different recording modes'
-      });
+      // // console.log for debug of the state sync issue
+      // console.warn('[ContentScript] ❌ STATE SYNC ISSUE DETECTED!', {
+      //   hudMode: hudRecordingMode,
+      //   injectedMode: injectedState.recordingMode,
+      //   problem: 'HUD and injected script have different recording modes'
+      // });
     } else {
       console.debug('[ContentScript] ✅ State is synchronized');
     }
