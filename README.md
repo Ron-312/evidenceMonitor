@@ -66,7 +66,7 @@ Evidence Monitor/
 
 **Background Service Worker (`background.ts`)**
 - Manages extension lifecycle and permissions
-- Stores evidence data per-tab
+- Stores evidence data per-window (shared across tabs in same window)
 - Handles data export and persistence
 - Coordinates between content scripts across tabs
 
@@ -87,6 +87,106 @@ Evidence Monitor/
 - Evidence collection and deduplication
 - Smart filtering and stack trace analysis
 - Queue management during page initialization
+
+## Key Files Implementation Details
+
+### Core Extension Files
+
+**`src/scripts/background.ts` - Service Worker**
+- **Window-based state management**: Evidence stored per-window, shared across tabs
+- **Event cap handling**: 10,000 event limit with automatic overflow management
+- **Batch processing**: `EVIDENCE_EVENT_BATCH` for high-volume evidence collection
+- **Auto-export functionality**: Automatic export when windows/tabs close with active recording
+- **Throttled HUD updates**: 200ms throttling to prevent UI spam during high activity
+- **URL grouping**: Exports organized by normalized URL with separate files per domain
+- **Deduplication**: Explorer-compatible deduplication algorithm (`type__data__target.id`)
+
+**`src/scripts/content.ts` - Content Script & HUD**
+- **Floating HUD interface**: Real-time evidence display with filtering controls
+- **Message relay system**: Bridges Background ↔ Content ↔ Injected scripts
+- **Handshake coordination**: Manages initialization protocol with injected scripts
+- **User interaction handling**: Record/pause, filters, export controls
+- **Cross-frame communication**: Handles messaging in iframe contexts
+- **State synchronization**: Keeps HUD in sync with background recording state
+
+**`src/scripts/main-world-hooks.ts` - Early Hook Installation**
+- **Document start execution**: Runs before page scripts load for zero-miss detection
+- **Early addEventListener hooks**: Catches surveillance during page initialization
+- **Page context execution**: Runs in main world for maximum API access
+- **Communication bridge**: postMessage coordination with injected script system
+- **Critical timing**: Prevents surveillance scripts from establishing before detection
+
+### Injected Script System (`src/scripts/injected/`)
+
+**`injected/main.ts` - Entry Point & Coordination**
+- **Initialization orchestration**: Coordinates all hook managers and evidence collector
+- **Message handling**: Processes postMessage communication with content script
+- **Handshake protocol**: Implements queue-to-realtime transition for evidence
+- **Hook timing management**: Ensures proper installation order and dependencies
+- **Error boundaries**: Handles injection failures gracefully
+
+**`injected/evidence-collector.ts` - Evidence Processing**
+- **Queue-based collection**: Buffers evidence during page initialization (3,000 event queue limit)
+- **Batch transmission**: Sends evidence in batches of 50 events for optimal performance
+- **Handshake implementation**: Zero-loss evidence delivery with 5-second timeout and retry logic
+- **Stack trace capture**: High-quality attribution with filtered call stacks
+- **Element tracking**: Consistent element identification via registry system
+- **Memory management**: Automatic queue overflow protection and batch timeout safety (500ms)
+
+**`injected/hook-manager.ts` - Hook Installation Coordinator**
+- **Comprehensive hook installation**: Coordinates all surveillance detection hooks
+- **Property getter hooks**: `input.value`, `textarea.value`, `select.value` access detection
+- **Event handler hooks**: `onkeydown`, `oninput` property setter monitoring
+- **Form submission hooks**: `form.submit()` method and constructor interception
+- **addEventListener hooks**: Complete event listener attachment monitoring
+
+### Hook Implementation Files (`src/scripts/injected/hooks/`)
+
+**`hooks/property-getter-hooks.ts`**
+- **Value access detection**: Hooks property getters for form elements
+- **Stack trace attribution**: Captures calling scripts for each value access
+- **Clean architecture design**: Evidence collection doesn't trigger monitored property getters
+- **Element registry integration**: Consistent element tracking across evidence types
+- **Performance optimization**: Minimal overhead with efficient property descriptor replacement
+
+**`hooks/event-handler-hooks.ts`**
+- **Property setter monitoring**: Detects `element.onkeydown = handler` assignments
+- **Comprehensive coverage**: Monitors all relevant event handler properties
+- **Surveillance pattern detection**: Identifies scripts setting up input monitoring
+- **Original functionality preservation**: Maintains normal page behavior
+
+**`hooks/form-hooks.ts`**
+- **Form submission detection**: Monitors `form.submit()` method calls
+- **FormData constructor hooks**: Detects `new FormData(form)` data collection
+- **Automated harvesting detection**: Catches programmatic form submission and serialization
+- **Data collection attribution**: Stack traces show which scripts collect form data
+
+*Note: "Programmatic form submission and serialization" means scripts automatically submitting forms or extracting form data without user interaction. Examples: `document.getElementById('loginForm').submit()` (auto-submit) or `new FormData(formElement)` (data extraction). This is different from normal user behavior (clicking submit) and is commonly used by surveillance scripts to harvest sensitive data like passwords and credit card information.*
+
+**`hooks/addEventListener-hook.ts`**
+- **Event listener monitoring**: Comprehensive `addEventListener` call detection
+- **Filtered monitoring**: Focuses on surveillance-relevant events (keydown, input, change)
+- **Early and late hooks**: Coordination with main-world hooks for complete coverage
+- **Context preservation**: Maintains proper `this` binding and event behavior
+
+### Utility and State Files
+
+**`src/scripts/utils/stack-trace.ts`**
+- **Clean stack trace capture**: Filtered, readable call stacks for evidence attribution
+- **Extension code filtering**: Removes our own extension frames to reduce noise
+- **Suspicious context preservation**: Keeps other extensions, data URLs, blob URLs
+- **Standardized formatting**: `"url:line:col [functionName]"` format for analysis
+
+**`src/scripts/injected/utils/element-registry.ts`**
+- **Map-based tracking**: Advanced element identification with collision detection and cleanup
+- **Stable synthetic IDs**: Randomized IDs with consistent tracking across multiple evidence events
+- **Semantic identifier priority**: Uses `id` → `name` → `outerHTML` fallback hierarchy (evidence-collector.ts)
+- **Advanced memory management**: 5,000 element limit with DOM attachment checking and FIFO cleanup
+
+**`src/scripts/state/track-events-manager.ts`**
+- **Recording state coordination**: Manages on/off state across all contexts
+- **Filter synchronization**: Keeps evidence filtering consistent between HUD and detection
+- **Configuration management**: Handles user preferences for evidence types and recording modes
 
 ### 2. Messaging Architecture
 
@@ -212,24 +312,29 @@ Evidence Monitor is an internal security research tool designed for:
 
 ### 1. Handshake Protocol & Queue System
 
-Evidence Monitor implements a sophisticated handshake protocol to ensure no evidence is lost during page initialization:
+Evidence Monitor implements a sophisticated handshake protocol with batching to ensure no evidence is lost during page initialization:
 
 **The Problem**: During page load, the injected script starts immediately but the content script may not be ready to receive messages. Evidence could be lost.
 
-**The Solution**: Queue-based evidence collection with automatic handshake:
+**The Solution**: Queue-based evidence collection with batching and automatic handshake:
 
 ```typescript
 // In evidence-collector.ts
 class EvidenceCollector {
   private isContentScriptReady: boolean = false;
   private pendingEvidence: EvidenceEvent[] = [];
-  private readonly maxQueueSize: number = 1000;
+  private readonly maxQueueSize: number = 3000;
   private readonly handshakeTimeout: number = 5000; // 5 seconds
 
-  // Queue evidence until content script is ready
+  // Event batching properties
+  private eventBatch: EvidenceEvent[] = [];
+  private readonly maxBatchSize: number = 50; // Events per batch
+  private readonly batchTimeout: number = 500; // 500ms safety timeout
+
+  // Send evidence with batching support
   private sendEvidence(evidence: EvidenceEvent): void {
     if (this.isContentScriptReady) {
-      this.transmitEvidence(evidence);
+      this.addToBatch(evidence);
     } else {
       this.queueEvidence(evidence);
     }
@@ -240,11 +345,13 @@ class EvidenceCollector {
 **Handshake Flow**:
 1. **Injected Script**: Starts collecting evidence → queues in memory
 2. **Content Script**: Loads → broadcasts `CONTENT_SCRIPT_READY` message
-3. **Injected Script**: Receives signal → flushes entire queue → switches to real-time mode
+3. **Injected Script**: Receives signal → flushes entire queue in batches → switches to real-time batch mode
 4. **Timeout Safety**: 5-second timeout prevents infinite queuing
 
 **Queue Management**:
-- **Max Size**: 1000 events (prevents memory exhaustion)
+- **Max Size**: 3,000 events (prevents memory exhaustion)
+- **Batch Processing**: 50 events per batch for optimal performance
+- **Batch Timeout**: 500ms safety timeout to flush incomplete batches
 - **FIFO Processing**: Oldest evidence transmitted first
 - **Error Handling**: Failed transmissions re-queued for retry
 - **Memory Safety**: Queue cleared after successful handshake
@@ -291,37 +398,52 @@ private deduplicateEvents(events: EvidenceEvent[]) {
 
 ### 3. Stack Trace Capture & Filtering
 
-Evidence Monitor implements intelligent stack trace analysis:
+Evidence Monitor implements intelligent stack trace analysis with sophisticated filtering:
 
 **Smart Filtering Strategy**:
 ```typescript
 // In stack-trace.ts
 private static shouldIncludeFrame(frame: ParsedStackFrame): boolean {
-  // 1. Hide OUR extension code (prevent noise)
+  // 1. Hide OUR extension code (comprehensive filtering)
   const isOurExtension = frame.url.includes('chrome-extension://') &&
     (frame.url.includes('injected.js') ||
-     frame.url.includes('content.js'));
+     frame.url.includes('content.js') ||
+     frame.url.includes('background.js') ||
+     frame.url.includes('main-world-hooks.js') ||
+     frame.url.includes('shared-types.js'));
   if (isOurExtension) return false;
 
-  // 2. Hide browser internals
-  const isBrowserInternal = frame.url.startsWith('chrome://') ||
-                           frame.url.startsWith('about:config');
+  // 2. Hide browser internals (enhanced)
+  const isBrowserInternal = frame.url.startsWith('about:config') ||
+                           frame.url.startsWith('chrome://') ||
+                           frame.url.startsWith('edge://') ||
+                           frame.url.startsWith('firefox://');
   if (isBrowserInternal) return false;
 
-  // 3. ALLOW suspicious contexts (critical for detection)
+  // 3. Filter malformed URLs
+  if (!frame.url || frame.url.trim() === '' || frame.url === 'null') return false;
+
+  // 4. ALLOW suspicious contexts (critical for detection)
   // - Other extensions (potential malware)
   // - Data URLs (suspicious scripts)
   // - Blob URLs (dynamic code)
   // - about:srcdoc (iframe injection)
+  // - about:blank (dynamic iframes)
   return true;
 }
 ```
+
+**Advanced Extension Detection** (Form Hooks):
+- **External vs Internal Logic**: Sophisticated detection of extension-triggered vs page-triggered calls
+- **Multi-frame Analysis**: Analyzes entire call stack for external code presence
+- **Hook-specific Filtering**: Excludes our own hook management frames from analysis
 
 **Stack Trace Benefits**:
 - **Attribution**: Identify which scripts are accessing data
 - **Context**: Distinguish legitimate vs suspicious access patterns
 - **Evidence Quality**: Clean, readable stack traces in export
 - **Performance**: Single capture per evidence (not per frame)
+- **Malware Detection**: Preserves other extension traces for security analysis
 
 ### 4. Hook Installation Timing Strategy
 
@@ -372,92 +494,141 @@ class HookManager {
 
 ### 5. Element Identification System
 
-Evidence Monitor implements a sophisticated element tracking system:
+Evidence Monitor implements a sophisticated element tracking system with advanced memory management:
 
 **Element Registry Pattern**:
 ```typescript
 // In element-registry.ts
 class ElementRegistry {
-  private elementMap = new WeakMap<Element, string>();
-  private idCounter = 0;
+  private elementToId: Map<Element, string> = new Map();
+  private existingIds: Set<string> = new Set();
+  private readonly MAX_ELEMENTS = 5000;
+  private cleanupCounter = 0;
+  private readonly CLEANUP_INTERVAL = 100;
 
   getElementId(element: Element): string {
-    let id = this.elementMap.get(element);
-    if (!id) {
-      id = `elem_${++this.idCounter}`;
-      this.elementMap.set(element, id);
+    if (this.elementToId.has(element)) {
+      return this.elementToId.get(element)!;
     }
-    return id;
+
+    // Periodic cleanup every 100 calls
+    if (++this.cleanupCounter % this.CLEANUP_INTERVAL === 0) {
+      this.performCleanup();
+    }
+
+    const newId = this.generateUniqueElementId(); // Randomized IDs
+    this.elementToId.set(element, newId);
+    return newId;
   }
 }
 ```
 
-**Element Data Prioritization**:
-1. **ID attribute** (if present): `<input id="password">`
-2. **Name attribute** (fallback): `<input name="username">`
-3. **Truncated outerHTML** (last resort): `<input type="password" class="...">`
+**Element Data Prioritization** (in evidence-collector.ts):
+1. **ID attribute** (if present): `element.id` → `"password"`
+2. **Name attribute** (fallback): `element.getAttribute('name')` → `"username"`
+3. **Truncated outerHTML** (last resort): `element.outerHTML.substring(0, 300)` → `"<input type=\"password\"..."`
+4. **Error handling**: `"[NO_ELEMENT_DATA]"` or `"[ELEMENT_DATA_ERROR]"`
+
+**Advanced Memory Management**:
+- **Size Limits**: 5,000 element maximum with automatic cleanup
+- **DOM Attachment Checking**: Removes elements no longer in DOM
+- **Collision Detection**: Randomized IDs with collision avoidance
+- **Memory Pressure Monitoring**: Tracks registry size and warns at 80% capacity
+- **FIFO Cleanup**: Removes oldest elements when over limit
 
 **Benefits**:
 - **Consistent Tracking**: Same element = same ID across evidence
-- **Memory Efficient**: WeakMap automatically cleans up dead references
+- **Scalable Design**: Handles large pages with thousands of elements
+- **Memory Efficient**: Automatic cleanup prevents memory leaks
 - **Privacy Aware**: Prioritizes semantic identifiers over full DOM content
 - **Deduplication Support**: Enables effective duplicate detection
+- **Performance Optimized**: Periodic cleanup maintains responsiveness
 
 ### 6. Recursive Detection Prevention
 
-Evidence Monitor prevents infinite recursion during evidence collection:
+Evidence Monitor prevents infinite recursion through clean architecture design and sophisticated extension detection:
 
-**The Problem**: Hooks trigger during evidence collection, causing infinite loops.
+**The Problem**: Hooks might trigger during evidence collection, causing infinite loops.
 
-**The Solution**: Processing flags and original method preservation:
+**The Solution**: Clean evidence collection design that doesn't trigger monitored APIs:
 
 ```typescript
-// In each hook implementation
-class PropertyGetterHooks {
-  private static isProcessing = false;
+// Clean hook design - evidence collection doesn't trigger hooks
+// Property getter hooks (property-getter-hooks.ts)
+get: function() {
+  // Monitor this property access and get filter decision
+  const { shouldProceed } = self.monitorPropertyAccess(this, propertyName);
 
-  private static createHook(target: any, propertyName: string) {
-    Object.defineProperty(target, propertyName, {
-      get: function() {
-        // Prevent recursion during evidence processing
-        if (PropertyGetterHooks.isProcessing) {
-          return originalDescriptor.get!.call(this);
-        }
+  // Evidence collection happens here but doesn't trigger property getters
+  // Always return the original value - this must never fail
+  return originalGetter.call(this);
+}
 
-        PropertyGetterHooks.isProcessing = true;
-        try {
-          // Collect evidence
-          evidenceCollector.createAndSendEvidence(this, propertyName, 'property');
-          return originalDescriptor.get!.call(this);
-        } finally {
-          PropertyGetterHooks.isProcessing = false;
-        }
-      }
-    });
+// Form hooks with extension detection (form-hooks.ts)
+private isCallFromExtension(stack: string): boolean {
+  const stackLines = stack.split('\n');
+  let hasExternalFrame = false;
+
+  for (const line of stackLines) {
+    // Skip our own hook management frames
+    if (line.includes('FormHooks.monitorFormSubmission') ||
+        line.includes('documentEventListener')) {
+      continue;
+    }
+
+    // Check for external (non-extension) frames
+    if (line.includes('http://') || line.includes('https://')) {
+      hasExternalFrame = true;
+    }
   }
+
+  return !hasExternalFrame; // Internal if no external frames found
+}
+
+// Evidence collector design (evidence-collector.ts)
+createAndSendEvidence(element, action, hookType) {
+  // Evidence creation doesn't trigger monitored APIs
+  const evidence = this.createEvidence(element, action, hookType);
+  const shouldProceed = filterManager.shouldMonitor(element, evidence.stackTrace);
+
+  if (shouldProceed) {
+    this.sendEvidence(evidence); // Message passing, not DOM/API manipulation
+  }
+
+  return { shouldProceed, evidence };
 }
 ```
 
 **Protection Mechanisms**:
-- **Processing Flags**: Prevent re-entry during evidence collection
-- **Original Method Preservation**: Always call original functionality
-- **Try-Finally Blocks**: Ensure flags are cleared even on errors
-- **Per-Hook Isolation**: Each hook type has independent protection
+- **Clean Architecture**: Evidence collection itself doesn't trigger monitored APIs
+- **Extension Detection**: Sophisticated analysis to identify extension vs. external calls
+- **Stack Trace Filtering**: Automatic removal of extension frames from evidence
+- **Message-based Collection**: Evidence transmission via postMessage, not DOM manipulation
+- **Original Method Preservation**: Always call original functionality without interference
+- **Safe Design**: Evidence collector operations isolated from hook triggers
 
 ## Understanding the Evidence Export
 
-Evidence Monitor exports comprehensive JSON reports containing all surveillance detection data. Here's how to read and analyze the exported files:
+Evidence Monitor exports comprehensive JSON reports organized by URL with session-based folder structure. Each recording session creates multiple files grouped by domain.
+
+### Export Structure
+
+**Session Folder**: `evidence_session_YYYY-MM-DD_HH-MM-SS/`
+- **Multiple files per session**: One file per unique URL visited
+- **Organized by domain**: Separate files for different websites
+- **Timestamped sessions**: Each export session gets unique folder
 
 ### Export File Structure
 
 ```json
 {
   "metadata": {
-    "domain": "example.com",
+    "url": "example.com/login",
     "exportedAt": "2025-01-15T14:30:25.123Z",
     "eventCount": 45,
     "recordingStarted": "2025-01-15T14:28:12.456Z",
     "autoExported": false,
+    "windowId": 1234567890,
     "deduplication": {
       "originalCount": 67,
       "deduplicatedCount": 45,
@@ -470,11 +641,12 @@ Evidence Monitor exports comprehensive JSON reports containing all surveillance 
 
 ### Metadata Analysis
 
-**Domain & Timing**:
-- `domain`: Website where surveillance was detected
+**URL & Timing**:
+- `url`: Normalized URL where surveillance was detected (without query params)
 - `exportedAt`: When the report was generated
-- `recordingStarted`: When monitoring began
-- `autoExported`: Whether export was automatic (at 1000 events) or manual
+- `recordingStarted`: When monitoring began for this window
+- `autoExported`: Whether export was automatic (window/tab close) or manual
+- `windowId`: Browser window identifier for correlation
 
 **Deduplication Statistics**:
 - `originalCount`: Total surveillance attempts detected

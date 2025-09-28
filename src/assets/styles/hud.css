@@ -107,6 +107,16 @@
   background: var(--section-bg-hover);
 }
 
+#evidence-hud-overlay .theme-toggle .theme-icon {
+  width: 16px;
+  height: 16px;
+  stroke: var(--accent-color);
+  stroke-width: 1.5;
+  fill: var(--accent-color);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Header Controls Layout */
 
 #evidence-hud-overlay .hud-header-controls {
@@ -628,9 +638,16 @@
 #evidence-hud-overlay .hud-minimized-inner {
   width: 20px;
   height: 20px;
-  border-radius: 50%;
-  background: var(--accent-color);
   transition: all 0.3s ease;
+  background: none;
+}
+
+#evidence-hud-overlay .hud-minimized-inner svg {
+  width: 100%;
+  height: 100%;
+  stroke: var(--accent-color);
+  stroke-width: 2;
+  fill: none;
 }
 
 /* Light theme adjustments for minimized circle */

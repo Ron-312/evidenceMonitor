@@ -12,9 +12,15 @@ export class EvidenceCollector {
   private elementRegistry: ElementRegistry;
   private isContentScriptReady: boolean = false;
   private pendingEvidence: EvidenceEvent[] = [];
-  private readonly maxQueueSize: number = 1000;
+  private readonly maxQueueSize: number = 3000;
   private readonly handshakeTimeout: number = 5000; // 5 seconds
   private handshakeTimer: number | null = null;
+
+  // Event batching properties
+  private eventBatch: EvidenceEvent[] = [];
+  private readonly maxBatchSize: number = 50; // Events per batch - flush immediately when reached
+  private batchTimer: number | null = null;
+  private readonly batchTimeout: number = 500; // 500ms safety timeout to flush incomplete batches
 
   constructor(elementRegistry: ElementRegistry) {
     this.elementRegistry = elementRegistry;
@@ -121,13 +127,53 @@ export class EvidenceCollector {
 
   /**
    * Sends evidence immediately or queues if content script not ready
+   * Uses batching to reduce communication overhead
    */
   private sendEvidence(evidence: EvidenceEvent): void {
     if (this.isContentScriptReady) {
-      this.transmitEvidence(evidence);
+      this.addToBatch(evidence);
     } else {
       this.queueEvidence(evidence);
     }
+  }
+
+  /**
+   * Adds evidence to current batch and triggers transmission when batch is full or timeout
+   */
+  private addToBatch(evidence: EvidenceEvent): void {
+    this.eventBatch.push(evidence);
+
+    // Send immediately when batch is full
+    if (this.eventBatch.length >= this.maxBatchSize) {
+      this.flushBatch();
+      return;
+    }
+
+    // Start safety timeout if this is the first event in batch
+    if (this.eventBatch.length === 1 && !this.batchTimer) {
+      this.batchTimer = window.setTimeout(() => {
+        this.flushBatch();
+      }, this.batchTimeout);
+    }
+  }
+
+  /**
+   * Sends current batch of events and resets batch state
+   */
+  private flushBatch(): void {
+    if (this.eventBatch.length === 0) return;
+
+    // Clear timer
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer);
+      this.batchTimer = null;
+    }
+
+    // Send batch
+    this.transmitEventBatch(this.eventBatch);
+
+    // Reset batch
+    this.eventBatch = [];
   }
 
   /**
@@ -162,6 +208,27 @@ export class EvidenceCollector {
   }
 
   /**
+   * Transmits batch of events to content script via window.postMessage
+   */
+  private transmitEventBatch(events: EvidenceEvent[]): void {
+    try {
+      window.postMessage({
+        type: 'EVIDENCE_EVENT_BATCH',
+        events: events,
+        batchSize: events.length
+      }, '*');
+
+      console.debug(`[EvidenceCollector] Transmitted batch of ${events.length} events`);
+    } catch (error) {
+      console.error('[EvidenceCollector] Failed to transmit event batch:', error);
+      // Re-queue all events in the batch for retry
+      for (const evidence of events) {
+        this.queueEvidence(evidence);
+      }
+    }
+  }
+
+  /**
    * Sets up listener for content script ready handshake
    */
   private setupHandshakeListener(): void {
@@ -179,30 +246,35 @@ export class EvidenceCollector {
    */
   private onContentScriptReady(): void {
     console.debug('[EvidenceCollector] Content script ready, flushing pending evidence');
-    
+
     this.isContentScriptReady = true;
-    
+
     // Clear handshake timeout
     if (this.handshakeTimer) {
       clearTimeout(this.handshakeTimer);
       this.handshakeTimer = null;
     }
-    
+
+    // Flush any remaining events in current batch
+    if (this.eventBatch.length > 0) {
+      this.flushBatch();
+    }
+
     // Flush all pending evidence
     this.flushPendingEvidence();
   }
 
   /**
-   * Sends all queued evidence to content script
+   * Sends all queued evidence to content script using batching
    */
   private flushPendingEvidence(): void {
     console.debug(`[EvidenceCollector] Flushing ${this.pendingEvidence.length} pending evidence events`);
-    
-    for (const evidence of this.pendingEvidence) {
-      this.transmitEvidence(evidence);
+
+    // Send pending evidence in batches
+    while (this.pendingEvidence.length > 0) {
+      const batch = this.pendingEvidence.splice(0, this.maxBatchSize);
+      this.transmitEventBatch(batch);
     }
-    
-    this.pendingEvidence = []; // Clear queue
   }
 
   /**
@@ -237,11 +309,17 @@ export class EvidenceCollector {
    */
   clearState(): void {
     this.pendingEvidence = [];
+    this.eventBatch = [];
     this.isContentScriptReady = false;
 
     if (this.handshakeTimer) {
       clearTimeout(this.handshakeTimer);
       this.handshakeTimer = null;
+    }
+
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer);
+      this.batchTimer = null;
     }
   }
 }

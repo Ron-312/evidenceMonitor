@@ -128,12 +128,18 @@ export class AddEventListenerHook {
    * Monitors addEventListener call and creates evidence if surveillance detected
    */
   private monitorAddEventListenerCall(
-    target: EventTarget, 
+    target: EventTarget,
     eventType: string,
     listener: EventListenerOrEventListenerObject | null,
     options?: boolean | AddEventListenerOptions
   ): { shouldProceed: boolean } {
     try {
+      // Safety guard - ensure target exists
+      if (!target) {
+        console.debug(`[${this.name}] Target is null/undefined, skipping monitoring`);
+        return { shouldProceed: false };
+      }
+
       // Handle Elements (form inputs, etc.) only
       if (target instanceof Element) {
         // Basic config check - should this element/event be monitored?
@@ -157,7 +163,7 @@ export class AddEventListenerHook {
 
       // Log unexpected target types for debugging (non-Elements are ignored)
       console.debug(`[${this.name}] Non-Element EventTarget ignored:`, {
-        target: target.constructor.name,
+        target: target.constructor?.name || '[unknown constructor]',
         eventType,
         targetToString: target.toString()
       });
@@ -166,8 +172,8 @@ export class AddEventListenerHook {
 
     } catch (error) {
       console.error(`[${this.name}] Error during surveillance monitoring:`, error, {
-        context: { 
-          targetType: target.constructor.name, 
+        context: {
+          targetType: target.constructor?.name || '[unknown constructor]',
           eventType,
           hasListener: !!listener
         }
@@ -191,7 +197,7 @@ export class AddEventListenerHook {
       return false;
     } catch (error) {
       console.error(`[${this.name}] Error in shouldMonitorTarget:`, error, {
-        context: { targetType: target.constructor.name, eventType }
+        context: { targetType: target.constructor?.name || '[unknown constructor]', eventType }
       });
       return false; // Default to not monitoring on errors
     }

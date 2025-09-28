@@ -18,6 +18,10 @@ class EvidenceManager {
   private tabWindowMap: Map<number, number>; // tabId -> windowId mapping
   private readonly EVENT_CAP = 10000; // Max events per window before showing warning
 
+  // HUD update throttling
+  private hudUpdateThrottle: Map<number, number> = new Map(); // windowId -> lastUpdateTime
+  private readonly hudUpdateInterval: number = 200; // 200ms throttle for HUD updates
+
   constructor() {
     this.windowData = new Map();
     this.tabWindowMap = new Map();
@@ -128,6 +132,15 @@ class EvidenceManager {
           if (message.event && sender.tab?.url) {
             this.addEvent(tabId, message.event, sender.tab.url).catch(error => {
               console.error('[Background] Failed to add evidence event:', error);
+            });
+          }
+          break;
+
+        case 'EVIDENCE_EVENT_BATCH':
+          if (message.events && message.batchSize && sender.tab?.url) {
+            console.debug(`[Background] Processing batch of ${message.batchSize} events from tab ${tabId}`);
+            this.addEventBatch(tabId, message.events, sender.tab.url).catch(error => {
+              console.error('[Background] Failed to add evidence event batch:', error);
             });
           }
           break;
@@ -312,6 +325,40 @@ class EvidenceManager {
 
     windowState.events.push(taggedEvent);
 
+    this.handleEventCapAndUpdate(windowId, windowState);
+  }
+
+  private async addEventBatch(tabId: number, events: EvidenceEvent[], url: string): Promise<void> {
+    const windowId = await this.getWindowIdFromTab(tabId);
+    this.addTabToWindow(windowId, tabId);
+    const windowState = this.windowData.get(windowId)!;
+
+    if (!windowState.recording) {
+      return;
+    }
+
+    const normalizedUrl = this.normalizeUrlForGrouping(url);
+    const now = performance.now();
+
+    // Process all events in batch
+    for (const event of events) {
+      if (!event.start) {
+        event.start = now;
+      }
+
+      // Tag event with normalized URL for grouping during export
+      const taggedEvent: EvidenceEvent = {
+        ...event,
+        _internalUrl: normalizedUrl
+      };
+
+      windowState.events.push(taggedEvent);
+    }
+
+    this.handleEventCapAndUpdate(windowId, windowState);
+  }
+
+  private handleEventCapAndUpdate(windowId: number, windowState: WindowData): void {
     // Handle event cap at window level
     if (windowState.events.length >= this.EVENT_CAP) {
       // Notify all tabs in this window about the cap
@@ -325,13 +372,25 @@ class EvidenceManager {
       windowState.events = windowState.events.slice(-this.EVENT_CAP);
     }
 
-    // Update all tabs in this window with new event count
-    for (const windowTabId of windowState.tabIds) {
-      this.sendToTab(windowTabId, {
-        type: 'HUD_UPDATE',
-        eventCount: windowState.events.length,
-        atCap: windowState.events.length >= this.EVENT_CAP
-      });
+    // Throttled HUD updates
+    this.throttledHudUpdate(windowId, windowState);
+  }
+
+  private throttledHudUpdate(windowId: number, windowState: WindowData): void {
+    const now = Date.now();
+    const lastUpdate = this.hudUpdateThrottle.get(windowId) || 0;
+
+    if (now - lastUpdate >= this.hudUpdateInterval) {
+      // Update all tabs in this window with new event count
+      for (const windowTabId of windowState.tabIds) {
+        this.sendToTab(windowTabId, {
+          type: 'HUD_UPDATE',
+          eventCount: windowState.events.length,
+          atCap: windowState.events.length >= this.EVENT_CAP
+        });
+      }
+
+      this.hudUpdateThrottle.set(windowId, now);
     }
   }
 

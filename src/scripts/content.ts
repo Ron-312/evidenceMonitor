@@ -19,11 +19,21 @@ class HUD {
       formDataCreation: true
     },
     theme: 'dark',
-    minimized: false
+    minimized: true  // Default to minimized to prevent flickering
   };
 
   private exportPreviewShown = false;
   private messageHideTimeout: number | null = null;
+
+  // UI update throttling properties
+  private updateThrottle: Map<string, number> = new Map();
+  private readonly updateInterval: number = 200; // 200ms throttle for UI updates
+  private pendingUpdate: boolean = false;
+
+  // Loading state management
+  private isLoading: boolean = true;
+  private loadingTimeout: number | null = null;
+  private readonly loadingTimeoutDuration: number = 3000; // 3 seconds timeout
 
   constructor() {
     console.debug('[HUD] 🎯 HUD constructor called');
@@ -51,10 +61,12 @@ class HUD {
 
     this.hudElement = this.createHUD();
     this.attachHUD();
+    this.hideHUDDuringLoading(); // Hide until state is loaded
     this.setupMessageListener();
+    this.startLoadingTimeout();
     this.requestStatus();
 
-    console.debug('[HUD] ✅ HUD constructor complete, element attached to DOM');
+    console.debug('[HUD] ✅ HUD constructor complete, element attached to DOM (hidden during loading)');
   }
 
   private createHUD(): HTMLDivElement {
@@ -66,7 +78,17 @@ class HUD {
         <div class="hud-header-controls">
           <button class="user-guide-toggle" title="Open User Guide">?</button>
           <button class="minimize-toggle" title="Minimize HUD">−</button>
-          <button class="theme-toggle" title="Toggle light/dark theme">🌙</button>
+          <button class="theme-toggle" title="Toggle light/dark theme">
+            <svg viewBox="0 0 20 20" class="theme-icon">
+              <!-- Moon icon (dark theme) -->
+              <path class="moon-icon" d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+              <!-- Sun icon (light theme) -->
+              <g class="sun-icon" style="display: none;">
+                <circle cx="10" cy="10" r="4"/>
+                <path d="M10 1v2M10 17v2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M1 10h2M17 10h2M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"/>
+              </g>
+            </svg>
+          </button>
         </div>
       </div>
       <div class="hud-content">
@@ -180,7 +202,12 @@ class HUD {
       <!-- Minimized Circle -->
       <div class="hud-minimized" style="display: none;">
         <div class="hud-minimized-circle">
-          <div class="hud-minimized-inner"></div>
+          <div class="hud-minimized-inner">
+            <svg viewBox="0 0 20 20">
+              <circle cx="8" cy="8" r="6"/>
+              <path d="m14 14 4 4"/>
+            </svg>
+          </div>
         </div>
       </div>
 
@@ -246,6 +273,29 @@ class HUD {
     document.body.appendChild(this.hudElement);
     this.setupEventHandlers();
     this.makeDraggable();
+  }
+
+  private hideHUDDuringLoading(): void {
+    this.hudElement.style.display = 'none';
+    console.debug('[HUD] Hidden during loading state');
+  }
+
+  private showHUDAfterLoading(): void {
+    if (this.isLoading) {
+      this.isLoading = false;
+      this.hudElement.style.display = 'block';
+      this.updateUI(); // Ensure correct state is shown
+      console.debug('[HUD] Shown after loading state resolved');
+    }
+  }
+
+  private startLoadingTimeout(): void {
+    this.loadingTimeout = window.setTimeout(() => {
+      if (this.isLoading) {
+        console.warn('[HUD] Loading timeout reached, showing HUD with current state');
+        this.showHUDAfterLoading();
+      }
+    }, this.loadingTimeoutDuration);
   }
 
   private setupEventHandlers(): void {
@@ -494,8 +544,21 @@ class HUD {
         });
 
         this.updateState(stateUpdate);
+
+        // Clear loading timeout and show HUD once state is loaded
+        if (this.loadingTimeout) {
+          clearTimeout(this.loadingTimeout);
+          this.loadingTimeout = null;
+        }
+        this.showHUDAfterLoading();
       } else {
         console.warn('[HUD] No response received from background script');
+        // Still show HUD even if no response (fallback to current state)
+        if (this.loadingTimeout) {
+          clearTimeout(this.loadingTimeout);
+          this.loadingTimeout = null;
+        }
+        this.showHUDAfterLoading();
       }
     });
   }
@@ -811,7 +874,39 @@ class HUD {
 
   private updateState(newState: Partial<HudState>): void {
     this.state = { ...this.state, ...newState };
-    this.updateUI();
+    this.throttledUpdateUI();
+  }
+
+  /**
+   * Throttled UI update to prevent excessive DOM operations
+   */
+  private throttledUpdateUI(): void {
+    // Don't update UI if still loading (HUD is hidden)
+    if (this.isLoading) {
+      return;
+    }
+
+    const now = Date.now();
+    const lastUpdate = this.updateThrottle.get('ui') || 0;
+
+    // If enough time has passed, update immediately
+    if (now - lastUpdate >= this.updateInterval) {
+      this.updateUI();
+      this.updateThrottle.set('ui', now);
+      this.pendingUpdate = false;
+    } else if (!this.pendingUpdate) {
+      // Schedule an update for later
+      this.pendingUpdate = true;
+      const timeToWait = this.updateInterval - (now - lastUpdate);
+
+      setTimeout(() => {
+        if (this.pendingUpdate && !this.isLoading) {
+          this.updateUI();
+          this.updateThrottle.set('ui', Date.now());
+          this.pendingUpdate = false;
+        }
+      }, timeToWait);
+    }
   }
 
   private updateUI(): void {
@@ -944,8 +1039,20 @@ class HUD {
     this.hudElement.setAttribute('data-theme', this.state.theme);
     const themeToggle = this.hudElement.querySelector('.theme-toggle') as HTMLButtonElement;
     if (themeToggle) {
-      themeToggle.textContent = this.state.theme === 'dark' ? '🌙' : '☀️';
-      themeToggle.title = this.state.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+      const moonIcon = themeToggle.querySelector('.moon-icon') as HTMLElement;
+      const sunIcon = themeToggle.querySelector('.sun-icon') as HTMLElement;
+
+      if (this.state.theme === 'dark') {
+        // Show moon icon for dark theme
+        moonIcon.style.display = 'block';
+        sunIcon.style.display = 'none';
+        themeToggle.title = 'Switch to light theme';
+      } else {
+        // Show sun icon for light theme
+        moonIcon.style.display = 'none';
+        sunIcon.style.display = 'block';
+        themeToggle.title = 'Switch to dark theme';
+      }
     }
   }
 
@@ -1105,6 +1212,26 @@ function setupInjectedScriptBridge(): void {
         event: event.data.event
       }).catch((error) => {
         console.error('[ContentScript] Failed to forward evidence to background:', error);
+      });
+    }
+
+    // Handle batched evidence events from injected script
+    if (event.data.type === 'EVIDENCE_EVENT_BATCH') {
+      // Check if extension context is still valid
+      if (!chrome.runtime?.id) {
+        console.warn('[ContentScript] Extension context invalidated - cannot send evidence batch');
+        return;
+      }
+
+      console.debug(`[ContentScript] Received evidence batch with ${event.data.batchSize} events`);
+
+      // Forward batched evidence to background service worker
+      chrome.runtime.sendMessage({
+        type: 'EVIDENCE_EVENT_BATCH',
+        events: event.data.events,
+        batchSize: event.data.batchSize
+      }).catch((error) => {
+        console.error('[ContentScript] Failed to forward evidence batch to background:', error);
       });
     }
 

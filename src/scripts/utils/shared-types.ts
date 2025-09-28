@@ -72,8 +72,10 @@ export interface HudMessage {
 }
 
 export interface BackgroundMessage {
-  type: 'EVIDENCE_EVENT' | 'TOGGLE_RECORDING' | 'GET_STATUS' | 'EXPORT_EVENTS' | 'CLEAR_EVENTS' | 'SET_RECORDING_MODE' | 'SET_FILTERS' | 'SET_TRACK_EVENTS' | 'GET_EXPORT_PREVIEW';
+  type: 'EVIDENCE_EVENT' | 'EVIDENCE_EVENT_BATCH' | 'TOGGLE_RECORDING' | 'GET_STATUS' | 'EXPORT_EVENTS' | 'CLEAR_EVENTS' | 'SET_RECORDING_MODE' | 'SET_FILTERS' | 'SET_TRACK_EVENTS' | 'GET_EXPORT_PREVIEW';
   event?: EvidenceEvent;
+  events?: EvidenceEvent[]; // For batched events
+  batchSize?: number; // Number of events in batch
   recordingMode?: 'console' | 'breakpoint';
   filters?: FilterOptions;
   trackEvents?: TrackEventsState;

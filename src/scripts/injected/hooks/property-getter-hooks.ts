@@ -199,6 +199,12 @@ export class PropertyGetterHooks {
    */
   private monitorPropertyAccess(target: any, propertyName: string): { shouldProceed: boolean } {
     try {
+      // Safety guard - ensure target exists
+      if (!target) {
+        console.debug(`[${this.name}] Target is null/undefined, skipping property monitoring`);
+        return { shouldProceed: false };
+      }
+
       // Only monitor if this is a surveillance pattern
       if (!this.shouldMonitorPropertyAccess(target, propertyName)) {
         return { shouldProceed: false }; // Skip monitoring for this target/property combination
@@ -218,8 +224,8 @@ export class PropertyGetterHooks {
 
     } catch (error) {
       console.error(`[${this.name}] Error during property access monitoring:`, error, {
-        context: { 
-          targetType: target.constructor.name, 
+        context: {
+          targetType: target.constructor?.name || '[unknown constructor]',
           propertyName,
           hasTarget: !!target
         }
@@ -242,7 +248,7 @@ export class PropertyGetterHooks {
       return false;
     } catch (error) {
       console.error(`[${this.name}] Error in shouldMonitorPropertyAccess:`, error, {
-        context: { targetType: target.constructor.name, propertyName }
+        context: { targetType: target.constructor?.name || '[unknown constructor]', propertyName }
       });
       return false; // Default to not monitoring on errors
     }
