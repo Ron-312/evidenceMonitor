@@ -22,6 +22,7 @@ export interface EvidenceEvent {
   data: string;
   target: { id: string };
   stackTrace: string[];
+  _internalUrl?: string; // Added for URL grouping during export
 }
 
 // HUD and Content Script Types
@@ -37,6 +38,17 @@ export interface HudState {
 }
 
 // Background Script Types
+export interface WindowData {
+  recording: boolean;
+  recordingMode: 'console' | 'breakpoint';
+  filters: FilterOptions;
+  trackEvents: TrackEventsState;
+  events: EvidenceEvent[]; // All events from all tabs in this window, URL-tagged
+  createdAt: number;
+  tabIds: Set<number>; // Active tabs in this window
+}
+
+// Legacy interface - kept for compatibility during migration
 export interface TabData {
   events: EvidenceEvent[];
   recording: boolean;
@@ -60,7 +72,7 @@ export interface HudMessage {
 }
 
 export interface BackgroundMessage {
-  type: 'EVIDENCE_EVENT' | 'TOGGLE_RECORDING' | 'GET_STATUS' | 'EXPORT_EVENTS' | 'CLEAR_EVENTS' | 'SET_RECORDING_MODE' | 'SET_FILTERS' | 'SET_TRACK_EVENTS';
+  type: 'EVIDENCE_EVENT' | 'TOGGLE_RECORDING' | 'GET_STATUS' | 'EXPORT_EVENTS' | 'CLEAR_EVENTS' | 'SET_RECORDING_MODE' | 'SET_FILTERS' | 'SET_TRACK_EVENTS' | 'GET_EXPORT_PREVIEW';
   event?: EvidenceEvent;
   recordingMode?: 'console' | 'breakpoint';
   filters?: FilterOptions;
@@ -69,11 +81,12 @@ export interface BackgroundMessage {
 
 export interface ExportData {
   metadata: {
-    domain: string;
+    url: string; // Changed from domain to full URL
     exportedAt: string;
     eventCount: number;
     recordingStarted: string;
     autoExported: boolean;
+    windowId: number; // Added window ID for context
     deduplication: {
       originalCount: number;
       deduplicatedCount: number;

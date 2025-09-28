@@ -145,9 +145,9 @@ export class FormHooks {
         const formDataInstance = new originalFormData(form, submitter);
 
         // Check if this call is from our own extension (prevent recursive detection)
+        // We need to check if the CALLER is from extension, not just if extension code is in stack
         const stack = new Error().stack;
-        const isFromExtension = stack && stack.includes('chrome-extension://') &&
-                               (stack.includes('injected.js') || stack.includes('form-hooks'));
+        const isFromExtension = stack && self.isCallFromExtension(stack);
 
         // Only monitor if FormData was created with a form element (matches Explorer)
         // AND config allows FormData creation monitoring
@@ -300,6 +300,62 @@ export class FormHooks {
   }
 
   /**
+   * Check if a FormData call originated from extension code vs. external page code
+   * This is more precise than checking if extension files appear anywhere in the stack
+   */
+  private isCallFromExtension(stack: string): boolean {
+    try {
+      // Split stack into lines and find the original caller (not just immediate frames)
+      const stackLines = stack.split('\n');
+
+      // Look through the entire stack to see if there's ANY external (non-extension) frame
+      // If we find external code anywhere in the stack, this is triggered by external code
+      let hasExternalFrame = false;
+      let hasExtensionFrame = false;
+
+      for (let i = 0; i < stackLines.length; i++) {
+        const line = stackLines[i];
+
+        // Skip our own hook management frames
+        if (line.includes('FormHooks.monitorFormSubmission') ||
+            line.includes('documentEventListener') ||
+            (line.includes('FormData') && line.includes('form-hooks'))) {
+          continue;
+        }
+
+        // Check for external (non-extension) frames
+        if (line.includes('http://') || line.includes('https://') || line.includes('file://')) {
+          hasExternalFrame = true;
+        }
+
+        // Check for extension frames (excluding our hook management)
+        if (line.includes('chrome-extension://')) {
+          hasExtensionFrame = true;
+        }
+      }
+
+      // If we found external code in the stack, treat this as external-triggered
+      if (hasExternalFrame) {
+        console.debug(`[${this.name}] External code found in stack - treating as external call`);
+        return false;
+      }
+
+      // If only extension frames (and no external), it's truly internal
+      if (hasExtensionFrame && !hasExternalFrame) {
+        console.debug(`[${this.name}] Only extension frames found - treating as internal call`);
+        return true;
+      }
+
+      // Default to false (external) if we can't determine
+      console.debug(`[${this.name}] Could not determine source, defaulting to external`);
+      return false;
+    } catch (error) {
+      console.warn(`[${this.name}] Error parsing stack trace for extension detection:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Monitor form submission - generate evidence for each form field
    * Matches Explorer's pattern with form action URL context
    * Uses Explorer's querySelector pattern: form.querySelector(`[name="${key}"]`)
@@ -310,8 +366,7 @@ export class FormHooks {
 
       // Check if this call is from our own extension (prevent recursive detection)
       const stack = new Error().stack;
-      const isFromExtension = stack && stack.includes('chrome-extension://') &&
-                             (stack.includes('injected.js') || stack.includes('form-hooks'));
+      const isFromExtension = stack && this.isCallFromExtension(stack);
 
       if (isFromExtension) {
         console.debug(`[${this.name}] Skipping form submission monitoring - called from extension`);

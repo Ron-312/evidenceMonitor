@@ -7,23 +7,113 @@ import {
   EvidenceEvent,
   FilterOptions,
   TrackEventsState,
-  TabData,
+  WindowData,
   HudMessage,
   BackgroundMessage,
   ExportData
 } from './utils/shared-types';
 
 class EvidenceManager {
-  private tabData: Map<number, TabData>;
-  private tabStorageKeys: Map<number, string>; // Track storage keys per tab
-  private readonly EVENT_CAP = 5000; // Max events per tab before showing warning
+  private windowData: Map<number, WindowData>;
+  private tabWindowMap: Map<number, number>; // tabId -> windowId mapping
+  private readonly EVENT_CAP = 10000; // Max events per window before showing warning
 
   constructor() {
-    this.tabData = new Map();
-    this.tabStorageKeys = new Map();
+    this.windowData = new Map();
+    this.tabWindowMap = new Map();
     this.setupMessageHandlers();
     this.setupTabHandlers();
-    this.cleanupOldStates();
+    this.setupWindowHandlers();
+  }
+
+  // URL utility functions
+  private normalizeUrlForGrouping(url: string): string {
+    try {
+      const urlObj = new URL(url);
+      // Remove query params and hash, keep pathname
+      // Decode URI components to preserve Hebrew and other Unicode characters
+      let hostname = urlObj.hostname;
+      let pathname = urlObj.pathname;
+
+      // Try to decode URI components, but handle errors gracefully
+      try {
+        hostname = decodeURIComponent(hostname);
+        pathname = decodeURIComponent(pathname);
+      } catch (decodeError) {
+        console.warn('[Background] Failed to decode URI components, using original:', decodeError);
+        // Keep original if decoding fails
+      }
+
+      return `${hostname}${pathname}`.replace(/\/$/, '');
+    } catch (error) {
+      console.warn('[Background] Failed to normalize URL:', url, error);
+      return 'unknown-url';
+    }
+  }
+
+  private createFilename(normalizedUrl: string, timestamp: Date): string {
+    // Convert URL path to safe filename with Unicode support (including Hebrew)
+    const safeName = normalizedUrl
+      .replace(/[<>:"/\\|?*]/g, '_')  // Only replace Windows-forbidden characters
+      .replace(/[\x00-\x1f]/g, '_')  // Replace control characters (but not Unicode range)
+      .replace(/_{2,}/g, '_')         // Collapse multiple underscores
+      .replace(/^_|_$/g, '');         // Remove leading/trailing underscores
+
+    const dateStr = timestamp.toISOString().split('T')[0];
+    const timeStr = timestamp.toTimeString().split(' ')[0].replace(/:/g, '-');
+    return `evidence_${safeName}_${dateStr}_${timeStr}.json`;
+  }
+
+  // Window ID discovery with fail-fast error handling
+  private async getWindowIdFromTab(tabId: number): Promise<number> {
+    try {
+      // Check cache first
+      if (this.tabWindowMap.has(tabId)) {
+        return this.tabWindowMap.get(tabId)!;
+      }
+
+      // Get fresh tab info
+      const tab = await chrome.tabs.get(tabId);
+      this.tabWindowMap.set(tabId, tab.windowId);
+      return tab.windowId;
+    } catch (error) {
+      console.error(`[Background] Failed to get window ID for tab ${tabId}:`, error);
+      throw new Error(`Cannot determine window for tab ${tabId}`);
+    }
+  }
+
+  // Initialize window state if it doesn't exist
+  private initializeWindow(windowId: number): void {
+    if (!this.windowData.has(windowId)) {
+      const windowState: WindowData = {
+        recording: false,
+        recordingMode: 'console',
+        filters: {
+          elementSelector: '',
+          attributeFilters: '',
+          stackKeywordFilter: ''
+        },
+        trackEvents: {
+          inputValueAccess: true,
+          inputEvents: true,
+          formSubmit: true,
+          formDataCreation: true
+        },
+        events: [],
+        createdAt: Date.now(),
+        tabIds: new Set()
+      };
+      this.windowData.set(windowId, windowState);
+      console.debug(`[Background] Initialized window ${windowId} with default state`);
+    }
+  }
+
+  // Add tab to window tracking
+  private addTabToWindow(windowId: number, tabId: number): void {
+    this.initializeWindow(windowId);
+    const windowState = this.windowData.get(windowId)!;
+    windowState.tabIds.add(tabId);
+    this.tabWindowMap.set(tabId, windowId);
   }
 
   private setupMessageHandlers(): void {
@@ -32,361 +122,348 @@ class EvidenceManager {
       const tabId = sender.tab?.id;
       if (!tabId) return;
 
+      // All handlers now use window-based state with error handling
       switch (message.type) {
         case 'EVIDENCE_EVENT':
           if (message.event && sender.tab?.url) {
-            this.addEvent(tabId, message.event, sender.tab.url);
+            this.addEvent(tabId, message.event, sender.tab.url).catch(error => {
+              console.error('[Background] Failed to add evidence event:', error);
+            });
           }
           break;
 
         case 'TOGGLE_RECORDING':
-          if (sender.tab?.url) {
-            this.toggleRecording(tabId, sender.tab.url).then(() => {
-              sendResponse({ recording: this.isRecording(tabId) });
-            });
-            return true; // Keep message channel open for async response
-          }
-          break;
-          
+          this.toggleRecording(tabId).then(() => {
+            sendResponse({ recording: this.isRecording(tabId) });
+          }).catch(error => {
+            console.error('[Background] Failed to toggle recording:', error);
+            sendResponse({ error: 'Failed to toggle recording' });
+          });
+          return true;
+
         case 'GET_STATUS':
-          if (sender.tab?.url) {
-            this.initializeTab(tabId, sender.tab.url).then(() => {
-              const statusResponse = {
-                recording: this.isRecording(tabId),
-                eventCount: this.getEventCount(tabId),
-                atCap: this.isAtCap(tabId),
-                recordingMode: this.getRecordingMode(tabId),
-                filters: this.getFilters(tabId),
-                trackEvents: this.getTrackEvents(tabId)
-              };
+          this.getWindowIdFromTab(tabId).then(windowId => {
+            this.addTabToWindow(windowId, tabId);
+            const windowState = this.windowData.get(windowId)!;
 
-              // Validate that we have a proper recordingMode before sending
-              if (!statusResponse.recordingMode) {
-                console.error(`[Background] ❌ CRITICAL: No recordingMode for tab ${tabId}! Forcing console mode.`, {
-                  tabExists: this.tabData.has(tabId),
-                  tabData: this.tabData.get(tabId)
-                });
-                statusResponse.recordingMode = 'console';
-              }
+            const statusResponse = {
+              recording: windowState.recording,
+              eventCount: windowState.events.length,
+              atCap: windowState.events.length >= this.EVENT_CAP,
+              recordingMode: windowState.recordingMode,
+              filters: windowState.filters,
+              trackEvents: windowState.trackEvents
+            };
 
-              console.debug(`[Background] GET_STATUS response for tab ${tabId}:`, statusResponse);
-              sendResponse(statusResponse);
-            }).catch(error => {
-              console.error(`[Background] Failed to initialize tab ${tabId}:`, error);
-              // Send minimal safe response
-              sendResponse({
-                recording: false,
-                eventCount: 0,
-                atCap: false,
-                recordingMode: 'console',
-                filters: { elementSelector: '', attributeFilters: '', stackKeywordFilter: '' },
-                trackEvents: { inputValueAccess: true, inputEvents: true, formSubmit: true, formDataCreation: true }
-              });
+            console.debug(`[Background] GET_STATUS response for tab ${tabId}, window ${windowId}:`, statusResponse);
+            sendResponse(statusResponse);
+          }).catch(error => {
+            console.error(`[Background] Failed to get status for tab ${tabId}:`, error);
+            sendResponse({
+              recording: false,
+              eventCount: 0,
+              atCap: false,
+              recordingMode: 'console',
+              filters: { elementSelector: '', attributeFilters: '', stackKeywordFilter: '' },
+              trackEvents: { inputValueAccess: true, inputEvents: true, formSubmit: true, formDataCreation: true }
             });
-            return true; // Keep message channel open for async response
-          }
-          break;
-          
+          });
+          return true;
+
         case 'EXPORT_EVENTS':
-          this.exportEvents(tabId);
+          this.exportEvents(tabId).catch(error => {
+            console.error('[Background] Failed to export events:', error);
+            sendResponse({ error: 'Failed to export events' });
+          });
           sendResponse({ exported: true });
           break;
-          
+
         case 'CLEAR_EVENTS':
           this.clearEvents(tabId).then(() => {
             sendResponse({ cleared: true });
+          }).catch(error => {
+            console.error('[Background] Failed to clear events:', error);
+            sendResponse({ error: 'Failed to clear events' });
           });
-          return true; // Keep message channel open for async response
-          break;
-          
+          return true;
+
         case 'SET_RECORDING_MODE':
           if (message.recordingMode) {
             this.setRecordingMode(tabId, message.recordingMode).then(() => {
               sendResponse({ recordingMode: message.recordingMode });
+            }).catch(error => {
+              console.error('[Background] Failed to set recording mode:', error);
+              sendResponse({ error: 'Failed to set recording mode' });
             });
-            return true; // Keep message channel open for async response
+            return true;
           }
           break;
-          
+
         case 'SET_FILTERS':
-          if (message.filters && sender.tab?.url) {
-            this.setFilters(tabId, message.filters, sender.tab.url).then(() => {
+          if (message.filters) {
+            this.setFilters(tabId, message.filters).then(() => {
               sendResponse({ filters: message.filters });
+            }).catch(error => {
+              console.error('[Background] Failed to set filters:', error);
+              sendResponse({ error: 'Failed to set filters' });
             });
-            return true; // Keep message channel open for async response
+            return true;
           }
           break;
 
         case 'SET_TRACK_EVENTS':
-          if (message.trackEvents && sender.tab?.url) {
-            this.setTrackEvents(tabId, message.trackEvents, sender.tab.url).then(() => {
+          if (message.trackEvents) {
+            this.setTrackEvents(tabId, message.trackEvents).then(() => {
               sendResponse({ trackEvents: message.trackEvents });
+            }).catch(error => {
+              console.error('[Background] Failed to set track events:', error);
+              sendResponse({ error: 'Failed to set track events' });
             });
-            return true; // Keep message channel open for async response
+            return true;
           }
           break;
+
+        case 'GET_EXPORT_PREVIEW':
+          this.getExportPreview(tabId).then((preview) => {
+            sendResponse({ preview });
+          }).catch(error => {
+            console.error('[Background] Failed to get export preview:', error);
+            sendResponse({ error: 'Failed to get export preview' });
+          });
+          return true;
       }
     });
   }
 
   private setupTabHandlers(): void {
-    // Auto-export when tab is closed (if recording was enabled)
     chrome.tabs.onRemoved.addListener((tabId: number) => {
-      if (this.tabData.has(tabId) && this.isRecording(tabId)) {
-        console.log(`Tab ${tabId} closed with recording enabled - auto-exporting`);
-        this.exportEvents(tabId, true); // true = auto-export
-      }
+      if (this.tabWindowMap.has(tabId)) {
+        const windowId = this.tabWindowMap.get(tabId)!;
+        const windowState = this.windowData.get(windowId);
 
-      // Clean up tab data and storage key
-      this.tabData.delete(tabId);
-      this.tabStorageKeys.delete(tabId);
-      console.debug(`[Background] Cleaned up tab ${tabId} data and storage key`);
+        if (windowState) {
+          // Remove tab from window tracking
+          windowState.tabIds.delete(tabId);
+
+          // If this was the last tab and recording was active, auto-export
+          if (windowState.tabIds.size === 0 && windowState.recording && windowState.events.length > 0) {
+            console.log(`Last tab ${tabId} closed with recording enabled - auto-exporting window ${windowId}`);
+            this.exportEvents(tabId, true).catch(error => {
+              console.error('[Background] Failed to auto-export on tab close:', error);
+            });
+          }
+        }
+
+        this.tabWindowMap.delete(tabId);
+        console.debug(`[Background] Cleaned up tab ${tabId} from window ${windowId}`);
+      }
     });
   }
 
-  private async initializeTab(tabId: number, url: string): Promise<void> {
-    if (!this.tabData.has(tabId)) {
-      const domain = new URL(url).hostname;
+  private setupWindowHandlers(): void {
+    // Clean up window data when window is closed
+    chrome.windows.onRemoved.addListener((windowId: number) => {
+      if (this.windowData.has(windowId)) {
+        const windowState = this.windowData.get(windowId)!;
 
-      // Try to load existing state for this domain
-      const savedState = await this.loadTabState(domain);
-
-      // Use existing storage key for this tab, or generate new one
-      let storageKey = this.tabStorageKeys.get(tabId);
-      if (!storageKey) {
-        storageKey = this.generateStorageKey(domain);
-        this.tabStorageKeys.set(tabId, storageKey);
-      }
-
-      // Create tab data with saved state or defaults
-      const tabData: TabData = {
-        events: [],
-        recording: savedState?.recording ?? false, // Start disabled by default
-        recordingMode: savedState?.recordingMode ?? 'console', // Default to console logging
-        domain: domain,
-        createdAt: Date.now(),
-        filters: savedState?.filters ?? {
-          elementSelector: '',
-          attributeFilters: '',
-          stackKeywordFilter: ''
-        },
-        trackEvents: savedState?.trackEvents ?? {
-          inputValueAccess: true,
-          inputEvents: true,
-          formSubmit: true,
-          formDataCreation: true
+        // Auto-export if recording was active
+        if (windowState.recording && windowState.events.length > 0) {
+          console.log(`Window ${windowId} closed with recording enabled - auto-exporting`);
+          // Use any tab from the window for export context
+          const anyTabId = Array.from(windowState.tabIds)[0];
+          if (anyTabId) {
+            this.exportEvents(anyTabId, true).catch(error => {
+              console.error('[Background] Failed to auto-export on window close:', error);
+            });
+          }
         }
-      };
 
-      this.tabData.set(tabId, tabData);
+        // Clean up all mappings for this window
+        for (const tabId of windowState.tabIds) {
+          this.tabWindowMap.delete(tabId);
+        }
 
-      // Save the initial state (with new storage key)
-      await this.saveTabState(tabId);
-
-      console.debug(`[Background] Initialized tab ${tabId} for domain ${domain}${savedState ? ' with saved state' : ' with defaults'}`);
-    }
+        this.windowData.delete(windowId);
+        console.debug(`[Background] Cleaned up window ${windowId} and all associated tabs`);
+      }
+    });
   }
 
+  // New window-based methods
   private async addEvent(tabId: number, event: EvidenceEvent, url: string): Promise<void> {
-    await this.initializeTab(tabId, url);
-    const tabInfo = this.tabData.get(tabId)!;
-    
-    // Only add if recording is enabled for this tab
-    if (!tabInfo.recording) return;
-    
-    // Add timestamp if not present
+    const windowId = await this.getWindowIdFromTab(tabId);
+    this.addTabToWindow(windowId, tabId);
+    const windowState = this.windowData.get(windowId)!;
+
+    if (!windowState.recording) {
+      return;
+    }
+
     if (!event.start) {
       event.start = performance.now();
     }
-    
-    tabInfo.events.push(event);
-    
-    // Check if we hit the cap
-    if (tabInfo.events.length >= this.EVENT_CAP) {
-      // Send warning to HUD about cap reached
-      this.sendToTab(tabId, {
-        type: 'HUD_MESSAGE',
-        level: 'warning',
-        message: `Event cap reached (${this.EVENT_CAP}). Oldest events will be dropped.`
-      });
-      
-      // Remove oldest events (FIFO)
-      tabInfo.events = tabInfo.events.slice(-this.EVENT_CAP);
+
+    // Tag event with normalized URL for grouping during export
+    const normalizedUrl = this.normalizeUrlForGrouping(url);
+    const taggedEvent: EvidenceEvent = {
+      ...event,
+      _internalUrl: normalizedUrl
+    };
+
+    windowState.events.push(taggedEvent);
+
+    // Handle event cap at window level
+    if (windowState.events.length >= this.EVENT_CAP) {
+      // Notify all tabs in this window about the cap
+      for (const windowTabId of windowState.tabIds) {
+        this.sendToTab(windowTabId, {
+          type: 'HUD_MESSAGE',
+          level: 'warning',
+          message: `Event cap reached (${this.EVENT_CAP}). Oldest events will be dropped.`
+        });
+      }
+      windowState.events = windowState.events.slice(-this.EVENT_CAP);
     }
-    
-    // TODO: Add duplicate detection strategy here
-    // Potential approaches:
-    // 1. Hash by: type + target.id + first stack frame
-    // 2. Hash by: type + target.id + full stack trace
-    // 3. Time-based deduplication (same event within 100ms)
-    
-    // Notify HUD of new event count
-    this.sendToTab(tabId, {
-      type: 'HUD_UPDATE',
-      eventCount: tabInfo.events.length,
-      atCap: tabInfo.events.length >= this.EVENT_CAP
-    });
+
+    // Update all tabs in this window with new event count
+    for (const windowTabId of windowState.tabIds) {
+      this.sendToTab(windowTabId, {
+        type: 'HUD_UPDATE',
+        eventCount: windowState.events.length,
+        atCap: windowState.events.length >= this.EVENT_CAP
+      });
+    }
   }
 
-  private async toggleRecording(tabId: number, url: string): Promise<void> {
-    await this.initializeTab(tabId, url);
-    const tabInfo = this.tabData.get(tabId)!;
-    tabInfo.recording = !tabInfo.recording;
-    
-    // Notify HUD of state change
-    this.sendToTab(tabId, {
-      type: 'HUD_UPDATE',
-      recording: tabInfo.recording,
-      eventCount: tabInfo.events.length
-    });
-    
-    if (tabInfo.recording) {
-      this.sendToTab(tabId, {
-        type: 'HUD_MESSAGE',
-        level: 'info',
-        message: 'Recording started - watching input interactions'
+  private async toggleRecording(tabId: number): Promise<void> {
+    const windowId = await this.getWindowIdFromTab(tabId);
+    this.addTabToWindow(windowId, tabId);
+    const windowState = this.windowData.get(windowId)!;
+
+    windowState.recording = !windowState.recording;
+
+    // Update all tabs in this window with new recording state
+    for (const windowTabId of windowState.tabIds) {
+      this.sendToTab(windowTabId, {
+        type: 'HUD_UPDATE',
+        recording: windowState.recording,
+        eventCount: windowState.events.length
       });
-      // Send recording mode to injected script
-      this.sendToTab(tabId, {
-        type: 'SET_RECORDING_MODE',
-        recordingMode: tabInfo.recordingMode
-      });
-    } else {
-      this.sendToTab(tabId, {
-        type: 'HUD_MESSAGE',
-        level: 'info', 
-        message: 'Recording stopped'
+
+      if (windowState.recording) {
+        this.sendToTab(windowTabId, {
+          type: 'HUD_MESSAGE',
+          level: 'info',
+          message: 'Recording started - watching input interactions'
+        });
+        this.sendToTab(windowTabId, {
+          type: 'SET_RECORDING_MODE',
+          recordingMode: windowState.recordingMode
+        });
+      } else {
+        this.sendToTab(windowTabId, {
+          type: 'HUD_MESSAGE',
+          level: 'info',
+          message: 'Recording stopped'
+        });
+      }
+
+      this.sendToTab(windowTabId, {
+        type: 'SET_RECORDING_STATE',
+        recording: windowState.recording
       });
     }
-
-    // Always send recording state to injected script
-    this.sendToTab(tabId, {
-      type: 'SET_RECORDING_STATE',
-      recording: tabInfo.recording
-    });
-
-    // Save state after recording toggle
-    await this.saveTabState(tabId);
   }
 
   private isRecording(tabId: number): boolean {
-    return this.tabData.get(tabId)?.recording || false;
-  }
-
-  private getEventCount(tabId: number): number {
-    return this.tabData.get(tabId)?.events.length || 0;
-  }
-
-  private isAtCap(tabId: number): boolean {
-    return this.getEventCount(tabId) >= this.EVENT_CAP;
-  }
-
-  private getRecordingMode(tabId: number): 'console' | 'breakpoint' {
-    const tabInfo = this.tabData.get(tabId);
-    const mode = tabInfo?.recordingMode || 'console';
-
-    console.debug(`[Background] getRecordingMode(${tabId}):`, {
-      tabExists: !!tabInfo,
-      storedMode: tabInfo?.recordingMode,
-      returnedMode: mode,
-      domain: tabInfo?.domain
-    });
-
-    return mode;
+    const windowId = this.tabWindowMap.get(tabId);
+    return this.windowData.get(windowId!)?.recording || false;
   }
 
   private async setRecordingMode(tabId: number, mode: 'console' | 'breakpoint'): Promise<void> {
-    const tabInfo = this.tabData.get(tabId);
-    if (tabInfo) {
-      tabInfo.recordingMode = mode;
-      console.debug(`[Background] Recording mode set to ${mode} for tab ${tabId}`);
+    const windowId = await this.getWindowIdFromTab(tabId);
+    this.addTabToWindow(windowId, tabId);
+    const windowState = this.windowData.get(windowId)!;
 
-      // Always send mode update to injected script (not just when recording)
-      this.sendToTab(tabId, {
+    windowState.recordingMode = mode;
+    console.debug(`[Background] Recording mode set to ${mode} for window ${windowId}`);
+
+    // Update all tabs in this window
+    for (const windowTabId of windowState.tabIds) {
+      this.sendToTab(windowTabId, {
         type: 'SET_RECORDING_MODE',
         recordingMode: mode
       });
-
-      // Save state after mode change
-      await this.saveTabState(tabId);
     }
   }
 
-  private getFilters(tabId: number): FilterOptions {
-    return this.tabData.get(tabId)?.filters || {
-      elementSelector: '',
-      attributeFilters: '',
-      stackKeywordFilter: ''
-    };
-  }
+  private async setFilters(tabId: number, filters: FilterOptions): Promise<void> {
+    const windowId = await this.getWindowIdFromTab(tabId);
+    this.addTabToWindow(windowId, tabId);
+    const windowState = this.windowData.get(windowId)!;
 
-  private async setFilters(tabId: number, filters: FilterOptions, url: string): Promise<void> {
-    await this.initializeTab(tabId, url);
-    const tabInfo = this.tabData.get(tabId);
-    if (tabInfo) {
-      tabInfo.filters = filters;
-      console.debug(`[Background] Filters updated for tab ${tabId}:`, filters);
+    windowState.filters = filters;
+    console.debug(`[Background] Filters updated for window ${windowId}:`, filters);
 
-      // Send filter updates to injected script
-      this.sendToTab(tabId, {
+    // Update all tabs in this window
+    for (const windowTabId of windowState.tabIds) {
+      this.sendToTab(windowTabId, {
         type: 'SET_FILTERS',
         filters: filters
       });
-
-      // Save state after filter change
-      await this.saveTabState(tabId);
     }
   }
 
-  private getTrackEvents(tabId: number): TrackEventsState {
-    return this.tabData.get(tabId)?.trackEvents || {
-      inputValueAccess: true,
-      inputEvents: true,
-      formSubmit: true,
-      formDataCreation: true
-    };
-  }
+  private async setTrackEvents(tabId: number, trackEvents: TrackEventsState): Promise<void> {
+    const windowId = await this.getWindowIdFromTab(tabId);
+    this.addTabToWindow(windowId, tabId);
+    const windowState = this.windowData.get(windowId)!;
 
-  private async setTrackEvents(tabId: number, trackEvents: TrackEventsState, url: string): Promise<void> {
-    await this.initializeTab(tabId, url);
-    const tabInfo = this.tabData.get(tabId);
-    if (tabInfo) {
-      tabInfo.trackEvents = trackEvents;
-      console.debug(`[Background] Track Events updated for tab ${tabId}:`, trackEvents);
+    windowState.trackEvents = trackEvents;
+    console.debug(`[Background] Track Events updated for window ${windowId}:`, trackEvents);
 
-      // Send track events updates to injected script
-      this.sendToTab(tabId, {
+    // Update all tabs in this window
+    for (const windowTabId of windowState.tabIds) {
+      this.sendToTab(windowTabId, {
         type: 'SET_TRACK_EVENTS',
         trackEvents: trackEvents
       });
-
-      // Save state after track events change
-      await this.saveTabState(tabId);
     }
   }
 
   private async clearEvents(tabId: number): Promise<void> {
-    const tabInfo = this.tabData.get(tabId);
-    if (tabInfo) {
-      tabInfo.events = [];
+    const windowId = await this.getWindowIdFromTab(tabId);
+    this.addTabToWindow(windowId, tabId);
+    const windowState = this.windowData.get(windowId)!;
 
-      // Send HUD update to refresh button states and event count
-      this.sendToTab(tabId, {
+    windowState.events = [];
+
+    // Update all tabs in this window
+    for (const windowTabId of windowState.tabIds) {
+      this.sendToTab(windowTabId, {
         type: 'HUD_UPDATE',
         eventCount: 0,
         atCap: false
       });
-
-      this.sendToTab(tabId, {
+      this.sendToTab(windowTabId, {
         type: 'HUD_MESSAGE',
         level: 'info',
         message: 'Events cleared'
       });
-
-      // Save state after clearing events
-      await this.saveTabState(tabId);
     }
   }
+
+  // Keep the old method signature but make it forward to new implementation
+  // Legacy method - now just ensures window is initialized
+  private async initializeTab(tabId: number, url: string): Promise<void> {
+    const windowId = await this.getWindowIdFromTab(tabId);
+    this.addTabToWindow(windowId, tabId);
+    console.debug(`[Background] Initialized tab ${tabId} in window ${windowId}`);
+  }
+
+
+
+
 
   /**
    * Deduplicates events using Explorer's algorithm
@@ -421,9 +498,11 @@ class EvidenceManager {
     };
   }
 
-  private exportEvents(tabId: number, isAutoExport: boolean = false): void {
-    const tabInfo = this.tabData.get(tabId);
-    if (!tabInfo || tabInfo.events.length === 0) {
+  private async exportEvents(tabId: number, isAutoExport: boolean = false): Promise<void> {
+    const windowId = await this.getWindowIdFromTab(tabId);
+    const windowState = this.windowData.get(windowId);
+
+    if (!windowState || windowState.events.length === 0) {
       if (!isAutoExport) {
         this.sendToTab(tabId, {
           type: 'HUD_MESSAGE',
@@ -434,131 +513,123 @@ class EvidenceManager {
       return;
     }
 
-    // Apply Explorer-style deduplication
-    const deduplicationResult = this.deduplicateEvents(tabInfo.events);
-
-    // Generate filename: evidence_google.com_2025-09-01_14-30-45.json
-    const now = new Date();
-    const dateStr = now.toISOString().split('T')[0]; // 2025-09-01
-    const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-'); // 14-30-45
-    const filename = `evidence_${tabInfo.domain}_${dateStr}_${timeStr}.json`;
-
-    // Create export data with metadata including deduplication statistics
-    const exportData: ExportData = {
-      metadata: {
-        domain: tabInfo.domain,
-        exportedAt: now.toISOString(),
-        eventCount: deduplicationResult.deduplicatedCount,
-        recordingStarted: new Date(tabInfo.createdAt).toISOString(),
-        autoExported: isAutoExport,
-        deduplication: {
-          originalCount: deduplicationResult.originalCount,
-          deduplicatedCount: deduplicationResult.deduplicatedCount,
-          duplicatesRemoved: deduplicationResult.duplicatesRemoved
-        }
-      },
-      events: deduplicationResult.deduplicated
-    };
-
-    // Trigger download using data URL (service workers don't support URL.createObjectURL)
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const url = 'data:application/json;charset=utf-8,' + encodeURIComponent(jsonString);
-    
-    chrome.downloads.download({
-      url: url,
-      filename: filename,
-      saveAs: !isAutoExport // Don't prompt for auto-exports
-    }, (_downloadId?: number) => {
-      
-      if (!isAutoExport) {
-        const message = deduplicationResult.duplicatesRemoved > 0
-          ? `Exported ${deduplicationResult.deduplicatedCount} events to ${filename} (${deduplicationResult.duplicatesRemoved} duplicates removed)`
-          : `Exported ${deduplicationResult.deduplicatedCount} events to ${filename}`;
-
-        this.sendToTab(tabId, {
-          type: 'HUD_MESSAGE',
-          level: 'success',
-          message: message
-        });
+    // Group events by normalized URL
+    const eventsByUrl = new Map<string, EvidenceEvent[]>();
+    for (const event of windowState.events) {
+      const url = event._internalUrl || 'unknown-url';
+      if (!eventsByUrl.has(url)) {
+        eventsByUrl.set(url, []);
       }
-    });
-  }
-
-  // ============================================================================
-  // STATE PERSISTENCE METHODS
-  // ============================================================================
-
-  private generateStorageKey(domain: string): string {
-    return `tab_${domain}`;
-  }
-
-  private async saveTabState(tabId: number): Promise<void> {
-    const tabInfo = this.tabData.get(tabId);
-    const storageKey = this.tabStorageKeys.get(tabId);
-
-    if (!tabInfo || !storageKey) return;
-
-    try {
-      const stateToSave = {
-        recording: tabInfo.recording,
-        recordingMode: tabInfo.recordingMode,
-        filters: tabInfo.filters,
-        trackEvents: tabInfo.trackEvents,
-        domain: tabInfo.domain,
-        lastUpdated: Date.now()
-      };
-
-      await chrome.storage.local.set({ [storageKey]: stateToSave });
-      console.debug(`[Background] Saved state for tab ${tabId} with key ${storageKey}:`, stateToSave);
-    } catch (error) {
-      console.warn(`[Background] Failed to save state for tab ${tabId}:`, error);
+      eventsByUrl.get(url)!.push(event);
     }
-  }
 
-  private async loadTabState(domain: string): Promise<Partial<TabData> | null> {
-    try {
-      const storageKey = `tab_${domain}`;
-      const storage = await chrome.storage.local.get(storageKey);
-      const state = storage[storageKey];
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+    const sessionFolder = `evidence_session_${dateStr}_${timeStr}`;
 
-      console.debug(`[Background] loadTabState for domain ${domain}:`, {
-        storageKey,
-        foundInStorage: !!state,
-        loadedState: state,
-        recordingMode: state?.recordingMode
+    let totalExportedEvents = 0;
+    let filesCreated = 0;
+
+    // Create one file per URL
+    for (const [normalizedUrl, urlEvents] of eventsByUrl) {
+      // Remove _internalUrl from events before export
+      const cleanEvents = urlEvents.map(event => {
+        const { _internalUrl, ...cleanEvent } = event;
+        return cleanEvent;
       });
 
-      if (state) {
-        return state;
-      }
-      return null;
-    } catch (error) {
-      console.warn(`[Background] Failed to load state for domain ${domain}:`, error);
-      return null;
+      const deduplicationResult = this.deduplicateEvents(cleanEvents);
+      const filename = this.createFilename(normalizedUrl, now);
+      const fullPath = `${sessionFolder}/${filename}`;
+
+      const exportData: ExportData = {
+        metadata: {
+          url: normalizedUrl,
+          exportedAt: now.toISOString(),
+          eventCount: deduplicationResult.deduplicatedCount,
+          recordingStarted: new Date(windowState.createdAt).toISOString(),
+          autoExported: isAutoExport,
+          windowId: windowId,
+          deduplication: {
+            originalCount: deduplicationResult.originalCount,
+            deduplicatedCount: deduplicationResult.deduplicatedCount,
+            duplicatesRemoved: deduplicationResult.duplicatesRemoved
+          }
+        },
+        events: deduplicationResult.deduplicated
+      };
+
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(jsonString);
+
+      chrome.downloads.download({
+        url: dataUrl,
+        filename: fullPath,
+        saveAs: !isAutoExport && filesCreated === 0  // Show save dialog only for first file to choose session folder location
+      });
+
+      totalExportedEvents += deduplicationResult.deduplicatedCount;
+      filesCreated++;
     }
+
+    // Send summary message to all tabs in this window
+    if (!isAutoExport) {
+      const summaryMessage = filesCreated === 1
+        ? `Exported ${totalExportedEvents} events to 1 file in ${sessionFolder}/`
+        : `Exported ${totalExportedEvents} events to ${filesCreated} files in ${sessionFolder}/`;
+
+      for (const windowTabId of windowState.tabIds) {
+        this.sendToTab(windowTabId, {
+          type: 'HUD_MESSAGE',
+          level: 'success',
+          message: summaryMessage
+        });
+      }
+    }
+
+    console.debug(`[Background] Exported ${totalExportedEvents} events across ${filesCreated} files to ${sessionFolder}/`);
   }
 
-  private async cleanupOldStates(): Promise<void> {
-    try {
-      const storage = await chrome.storage.local.get();
-      const keys = Object.keys(storage);
-      const now = Date.now();
-      const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+  private async getExportPreview(tabId: number): Promise<{ [url: string]: { eventCount: number; filename: string } }> {
+    const windowId = await this.getWindowIdFromTab(tabId);
+    const windowState = this.windowData.get(windowId);
 
-      const keysToRemove = keys
-        .filter(key => key.startsWith('tab_'))
-        .filter(key => {
-          const state = storage[key];
-          return state && state.lastUpdated && (now - state.lastUpdated) > maxAge;
-        });
-
-      if (keysToRemove.length > 0) {
-        await chrome.storage.local.remove(keysToRemove);
-        console.debug(`[Background] Cleaned up ${keysToRemove.length} old state entries`);
-      }
-    } catch (error) {
-      console.warn('[Background] Failed to cleanup old states:', error);
+    if (!windowState || windowState.events.length === 0) {
+      return {};
     }
+
+    // Group events by normalized URL (same logic as export)
+    const eventsByUrl = new Map<string, EvidenceEvent[]>();
+    for (const event of windowState.events) {
+      const url = event._internalUrl || 'unknown-url';
+      if (!eventsByUrl.has(url)) {
+        eventsByUrl.set(url, []);
+      }
+      eventsByUrl.get(url)!.push(event);
+    }
+
+    const now = new Date();
+    const preview: { [url: string]: { eventCount: number; filename: string } } = {};
+
+    // Generate preview for each URL
+    for (const [normalizedUrl, urlEvents] of eventsByUrl) {
+      // Remove _internalUrl from events for accurate count
+      const cleanEvents = urlEvents.map(event => {
+        const { _internalUrl, ...cleanEvent } = event;
+        return cleanEvent;
+      });
+
+      const deduplicationResult = this.deduplicateEvents(cleanEvents);
+      const filename = this.createFilename(normalizedUrl, now);
+
+      preview[normalizedUrl] = {
+        eventCount: deduplicationResult.deduplicatedCount,
+        filename: filename
+      };
+    }
+
+    return preview;
   }
 
   private sendToTab(tabId: number, message: HudMessage): void {

@@ -22,6 +22,9 @@ class HUD {
     minimized: false
   };
 
+  private exportPreviewShown = false;
+  private messageHideTimeout: number | null = null;
+
   constructor() {
     console.debug('[HUD] 🎯 HUD constructor called');
 
@@ -71,6 +74,7 @@ class HUD {
         <!-- Status Display -->
         <div class="status-section">
           <div class="recording-status">Not Recording</div>
+          <div class="window-context">Window recording session</div>
           <div class="event-count">Events captured: 0</div>
         </div>
         
@@ -437,7 +441,10 @@ class HUD {
           });
           break;
         case 'HUD_MESSAGE':
-          this.showMessage(message.message, message.level || 'info');
+          // Don't override persistent export preview messages
+          if (!this.exportPreviewShown) {
+            this.showMessage(message.message, message.level || 'info');
+          }
           break;
       }
     });
@@ -500,16 +507,148 @@ class HUD {
           ...this.state,
           recording: response.recording
         });
+
+        // Reset export preview only when starting recording (adding new events)
+        if (response.recording) {
+          this.resetExportPreviewState();
+        }
       }
     });
   }
 
   private exportData(): void {
+    if (!this.exportPreviewShown) {
+      // First click: Show preview message
+      this.showExportPreview();
+    } else {
+      // Second click: Actually export
+      this.proceedWithExport();
+    }
+  }
+
+  // Cancel export preview when other actions are taken
+  private cancelExportPreview(): void {
+    if (this.exportPreviewShown) {
+      this.resetExportPreviewState();
+    }
+  }
+
+  private showExportPreview(): void {
+    // Request preview data from background
+    chrome.runtime.sendMessage({ type: 'GET_EXPORT_PREVIEW' }, (response) => {
+      if (response && response.preview) {
+        this.displayExportPreviewMessage(response.preview);
+      } else {
+        // Fallback: proceed with direct export if preview not available
+        this.proceedWithExport();
+      }
+    });
+  }
+
+  private displayExportPreviewMessage(preview: { [url: string]: { eventCount: number; filename: string } }): void {
+    const urls = Object.keys(preview);
+    const totalEvents = Object.values(preview).reduce((sum, file) => sum + file.eventCount, 0);
+
+    if (urls.length === 0) {
+      this.showMessage('No events to export', 'warning');
+      return;
+    }
+
+    // Helper function to truncate long URLs
+    const truncateUrl = (url: string, maxLength: number = 50): string => {
+      if (url.length <= maxLength) return url;
+      return url.substring(0, maxLength - 3) + '...';
+    };
+
+    // Create concise preview message with session folder explanation
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+    const sessionFolder = `evidence_session_${dateStr}_${timeStr}`;
+
+    let message = `Ready to export ${totalEvents} events from ${urls.length} URL${urls.length !== 1 ? 's' : ''} into folder "${sessionFolder}"`;
+
+    // For multiple URLs, show count only to avoid overflow
+    if (urls.length > 1) {
+      const truncatedUrls = urls.map(url => truncateUrl(url, 25));
+      message += `. Files: ${truncatedUrls.join(', ')}`;
+    } else {
+      // For single URL, show more detail
+      const url = urls[0];
+      const eventCount = preview[url].eventCount;
+      const displayUrl = truncateUrl(url, 50);
+      message += `: ${displayUrl} (${eventCount} events)`;
+    }
+
+    message += `. You'll choose the location for the entire session folder.`;
+
+    this.showPersistentMessage(message, 'info');
+    this.updateExportButtonForConfirmation();
+    this.exportPreviewShown = true;
+  }
+
+  private showPersistentMessage(message: string, level: string = 'info'): void {
+    // Cancel any existing auto-hide timer
+    if (this.messageHideTimeout !== null) {
+      clearTimeout(this.messageHideTimeout);
+      this.messageHideTimeout = null;
+    }
+
+    const messageDiv = this.hudElement.querySelector('.message-display') as HTMLElement;
+    messageDiv.textContent = message;
+    messageDiv.style.display = 'block';
+    messageDiv.className = `message-display message-${level}`;
+
+    // Ensure text wrapping and proper overflow handling
+    messageDiv.style.whiteSpace = 'normal';
+    messageDiv.style.wordWrap = 'break-word';
+    messageDiv.style.overflowWrap = 'break-word';
+    messageDiv.style.maxHeight = '80px';
+    messageDiv.style.overflow = 'auto';
+
+    // Support for Hebrew and other RTL languages
+    messageDiv.style.direction = 'auto';
+    messageDiv.style.textAlign = 'start';
+    messageDiv.style.unicodeBidi = 'plaintext';
+
+    // No auto-hide timeout for persistent messages
+  }
+
+  private hidePersistentMessage(): void {
+    const messageDiv = this.hudElement.querySelector('.message-display') as HTMLElement;
+    messageDiv.style.display = 'none';
+  }
+
+  private updateExportButtonForConfirmation(): void {
+    const exportBtn = this.hudElement.querySelector('.export-data') as HTMLButtonElement;
+    if (exportBtn) {
+      exportBtn.textContent = 'Confirm Export';
+      exportBtn.style.backgroundColor = '#4CAF50'; // Green to indicate confirmation
+    }
+  }
+
+  private resetExportButton(): void {
+    const exportBtn = this.hudElement.querySelector('.export-data') as HTMLButtonElement;
+    if (exportBtn) {
+      exportBtn.textContent = 'Export Data';
+      exportBtn.style.backgroundColor = ''; // Reset to default styling
+    }
+  }
+
+  private proceedWithExport(): void {
     chrome.runtime.sendMessage({ type: 'EXPORT_EVENTS' });
+    this.resetExportPreviewState();
   }
 
   private clearData(): void {
     chrome.runtime.sendMessage({ type: 'CLEAR_EVENTS' });
+    this.resetExportPreviewState();
+  }
+
+  private resetExportPreviewState(): void {
+    this.exportPreviewShown = false;
+    this.resetExportButton();
+    this.hidePersistentMessage();
   }
 
   private onThemeToggle(): void {
@@ -715,6 +854,7 @@ class HUD {
     }
 
     const recordingStatus = this.hudElement.querySelector('.recording-status') as HTMLElement;
+    const windowContext = this.hudElement.querySelector('.window-context') as HTMLElement;
     const eventCount = this.hudElement.querySelector('.event-count') as HTMLElement;
     const startBtn = this.hudElement.querySelector('.start-recording') as HTMLButtonElement;
     const stopBtn = this.hudElement.querySelector('.stop-recording') as HTMLButtonElement;
@@ -722,8 +862,17 @@ class HUD {
     const clearBtn = this.hudElement.querySelector('.clear-data') as HTMLButtonElement;
 
     // Update status display
-    recordingStatus.textContent = this.state.recording ? 'Recording...' : 'Not Recording';
+    recordingStatus.textContent = this.state.recording ? 'Recording this window...' : 'Not recording';
     recordingStatus.style.color = this.state.recording ? '#4CAF50' : '#666';
+
+    // Update window context info
+    if (windowContext) {
+      windowContext.textContent = this.state.recording
+        ? 'All tabs in this window are being monitored'
+        : 'Window-based recording session ready';
+      windowContext.style.color = '#888';
+      windowContext.style.fontSize = '12px';
+    }
     
     eventCount.textContent = `Events captured: ${this.state.eventCount}`;
     if (this.state.atCap) {
@@ -736,7 +885,7 @@ class HUD {
     // Update button states
     startBtn.disabled = this.state.recording;
     stopBtn.disabled = !this.state.recording;
-    exportBtn.disabled = this.state.eventCount === 0;
+    exportBtn.disabled = this.state.eventCount === 0 || this.state.recording;
     clearBtn.disabled = this.state.eventCount === 0;
 
     // Update recording mode toggle switch
@@ -801,16 +950,41 @@ class HUD {
   }
 
   private showMessage(message: string, level: string = 'info'): void {
+    // Don't override persistent export preview messages
+    if (this.exportPreviewShown) {
+      return;
+    }
+
+    // Cancel any existing auto-hide timer
+    if (this.messageHideTimeout !== null) {
+      clearTimeout(this.messageHideTimeout);
+      this.messageHideTimeout = null;
+    }
+
     const messageDiv = this.hudElement.querySelector('.message-display') as HTMLElement;
     messageDiv.textContent = message;
     messageDiv.style.display = 'block';
-    
+
     // Style based on level
     messageDiv.className = `message-display message-${level}`;
-    
+
+    // Ensure text wrapping and Hebrew/RTL support
+    messageDiv.style.whiteSpace = 'normal';
+    messageDiv.style.wordWrap = 'break-word';
+    messageDiv.style.overflowWrap = 'break-word';
+    messageDiv.style.direction = 'auto';
+    messageDiv.style.textAlign = 'start';
+    messageDiv.style.unicodeBidi = 'plaintext';
+
+
     // Auto-hide after 3 seconds
-    setTimeout(() => {
-      messageDiv.style.display = 'none';
+    this.messageHideTimeout = window.setTimeout(() => {
+      // Only hide if we're not showing a persistent export preview message
+      if (!this.exportPreviewShown) {
+        messageDiv.style.display = 'none';
+      } else {
+      }
+      this.messageHideTimeout = null;
     }, 3000);
   }
 
